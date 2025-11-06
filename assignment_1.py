@@ -6,6 +6,7 @@ SAMPLE_SIZE = 100000
 BOX_BOUND = 3
 SMALL_BOX_BOUND = 1.5
 BOX_PROBABILITY = 0.5
+DETERMINISTIC_SEED = 0.7
 
 def is_in_sphere(x, y, z, k):
     """
@@ -60,10 +61,9 @@ def deterministic_sample_single_sequence(num_samples, x_0, m):
 
 
 def deterministic_sample(num_samples, box, m=3.8, seed=0.5):
-    sample_seeds = deterministic_sample_single_sequence(3, seed, m)
-    x = deterministic_sample_single_sequence(num_samples, sample_seeds[0], m)
-    y = deterministic_sample_single_sequence(num_samples, sample_seeds[1], m)
-    z = deterministic_sample_single_sequence(num_samples, sample_seeds[2], m)
+    x = deterministic_sample_single_sequence(num_samples, seed, m)
+    y = deterministic_sample_single_sequence(num_samples, seed + 0.01, m)
+    z = deterministic_sample_single_sequence(num_samples, seed - 0.01, m)
 
     x = x * BOX_BOUND - BOX_BOUND/2
     y = y * BOX_BOUND - BOX_BOUND/2
@@ -72,13 +72,13 @@ def deterministic_sample(num_samples, box, m=3.8, seed=0.5):
 
 
 def points_in_intersection(samples, k, r, R, x_0=0, y_0=0, z_0=0):
-    x_array, y_array, z_array = samples
     """
     Checks for points (x,y,z) if they exist in the intersection between a sphere with radius
     k and a torus with minor radius r, major radius R, optionally off-center.
     
     Returns number of points in intersection, and the x, y and z arrays containing those points.
     """
+    x_array, y_array, z_array = samples
     mask = is_in_sphere(x_array, y_array, z_array, k) & is_in_torus(x_array, y_array, z_array, r, R, x_0, y_0, z_0)
     intersection = (x_array[mask], y_array[mask], z_array[mask])
     non_intersection = (x_array[~mask], y_array[~mask], z_array[~mask])
@@ -138,14 +138,16 @@ print(f"Case b: k = 1, R = 0.5 and r = 0.5,\nESTIMATED AREA: {volume}\nERROR: {e
 
 
 print("ASSIGNMENT 1.2")
-samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=0.1)
+samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=DETERMINISTIC_SEED)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case a: k = 1, R = 0.75 and r = 0.4,\nESTIMATED AREA: {volume}")
-samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=0.1)
+estimate_error = error(intersection)
+print(f"Case a: k = 1, R = 0.75 and r = 0.4,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}")
+samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=DETERMINISTIC_SEED)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.5, 0.5)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case b: k = 1, R = 0.5 and r = 0.5,\nESTIMATED AREA:\n{volume}\n")
+estimate_error = error(intersection)
+print(f"Case b: k = 1, R = 0.5 and r = 0.5,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}\n")
 
 
 print("ASSIGNMENT 1.3a")
