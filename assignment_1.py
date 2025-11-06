@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 
 np.random.seed(40)
 SAMPLE_SIZE = 100000
-BOX_BOUND = 2.5
+BOX_BOUND = 3
+SMALL_BOX_BOUND = 1.5
+BOX_PROBABILITY = 0.5
 
 def is_in_sphere(x, y, z, k):
     """
@@ -20,15 +22,30 @@ def is_in_torus(x, y, z, r, R, x_0, y_0, z_0):
     return (np.sqrt((x-x_0)**2 + (y-y_0)**2) - R)**2 + (z-z_0)**2 <= r**2
 
 
-def uniform_random_sample_cube(size, num_samples):
+def uniform_random_sample_cube(size, z_center, num_samples):
     """
     Uniformly samples num_samples points (x,y,z) in a cube with measurements [size]x[size]x[size].
     """
     return (
         np.random.uniform(-0.5 * size, 0.5 * size, num_samples),
         np.random.uniform(-0.5 * size, 0.5 * size, num_samples),
-        np.random.uniform(-0.5 * size, 0.5 * size, num_samples)
+        np.random.uniform((-0.5 + z_center) * size, (0.5 + z_center) * size, num_samples)
     )
+
+
+def mixture_sample_cube(p_B, num_samples):
+    """
+    Uniformly samples within two bounding boxes; one bigger box centered at 0, one
+    smaller box centered at 0.1. The probability of sampling from the bigger box is
+    defined by p_B.
+    """
+    num_B_samples = int(num_samples * p_B)
+    x_B, y_B, z_B = uniform_random_sample_cube(BOX_BOUND, 0, num_B_samples)
+    x_S, y_S, z_S = uniform_random_sample_cube(SMALL_BOX_BOUND, 0.1, num_samples - num_B_samples)
+    x_total = np.concatenate([x_B, x_S])
+    y_total = np.concatenate([y_B, y_S])
+    z_total = np.concatenate([z_B, z_S])
+    return (x_total, y_total, z_total)
 
 
 def deterministic_sample_single_sequence(num_samples, x_0, m):
@@ -68,6 +85,17 @@ def points_in_intersection(samples, k, r, R, x_0=0, y_0=0, z_0=0):
     return intersection, non_intersection
 
 
+def error(intersection):
+    """
+    Calculates error of estimated volume using a binomial distribution.
+    """
+    x_in, _, _ = intersection
+    probability_in = len(x_in) / SAMPLE_SIZE
+    std = np.sqrt(probability_in * (1 - probability_in))
+    # Multiply by bounding box volume to get error of estimated volume
+    return np.pow(BOX_BOUND, 3) * std / np.sqrt(SAMPLE_SIZE)
+
+
 def plot_intersection(x, y, z, sample_fraction=1, fig=None):
     """
     Displays points in 3D space using a scatter plot. If sample_fraction is passed and not 1,
@@ -97,30 +125,38 @@ def estimate_volume(intersection, box_bound):
 
 
 print("ASSIGNMENT 1.1")
-samples = uniform_random_sample_cube(BOX_BOUND, SAMPLE_SIZE)
+samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case a: k = 1, R = 0.75 and r = 0.4, ESTIMATED AREA: {volume}")
-samples = uniform_random_sample_cube(BOX_BOUND, SAMPLE_SIZE)
+estimate_error = error(intersection)
+print(f"Case a: k = 1, R = 0.75 and r = 0.4,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}")
+samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.5, 0.5)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case b: k = 1, R = 0.5 and r = 0.5, ESTIMATED AREA: {volume}")
+estimate_error = error(intersection)
+print(f"Case b: k = 1, R = 0.5 and r = 0.5,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}\n")
 
 
 print("ASSIGNMENT 1.2")
 samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=0.1)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case a: k = 1, R = 0.75 and r = 0.4, ESTIMATED AREA: {volume}")
+print(f"Case a: k = 1, R = 0.75 and r = 0.4,\nESTIMATED AREA: {volume}")
 samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=0.1)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.5, 0.5)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case b: k = 1, R = 0.5 and r = 0.5, ESTIMATED AREA: {volume}")
+print(f"Case b: k = 1, R = 0.5 and r = 0.5,\nESTIMATED AREA:\n{volume}\n")
 
 
 print("ASSIGNMENT 1.3a")
-samples = uniform_random_sample_cube(BOX_BOUND, SAMPLE_SIZE)
+samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
 intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75, z_0=0.1)
 volume = estimate_volume(intersection, BOX_BOUND)
-print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, ESTIMATED AREA: {volume}")
+estimate_error = error(intersection)
+print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}")
+samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
+intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75, z_0=0.1)
+volume = estimate_volume(intersection, BOX_BOUND)
+estimate_error = error(intersection)
+print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1,\nESTIMATED AREA: {volume}\nERROR: {estimate_error}\n")
 
