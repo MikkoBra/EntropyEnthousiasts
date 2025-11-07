@@ -142,7 +142,7 @@ def plot_means(estimates, ax=None):
         ax = fig.add_subplot()
     ax.plot(np.arange(len(means)), means, 'b', label="Mean volume estimate")
     ax.set_xlabel("Iteration")
-    ax.set_ylabel("Mean area estimate")
+    ax.set_ylabel("Mean volume estimate")
     ax.set_title("Mean volume estimate over iterations")
 
 
@@ -199,25 +199,25 @@ def multiple_deterministic_runs(k, r, R):
 
 def exercise_1_1():
     print("ASSIGNMENT 1.1")
-    area, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
+    volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED AREA: {area}\n" +
+    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
-    area, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
+    volume, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED AREA: {area:.3f}\n" +
+    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
 
 
 def exercise_1_2():
     print("ASSIGNMENT 1.2")
-    area, se, mean_error = multiple_deterministic_runs(1, 0.4, 0.75)
+    volume, se, mean_error = multiple_deterministic_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs\nESTIMATED AREA: {area:.3f}\n" +
+    print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
-    area, se, mean_error = multiple_deterministic_runs(1, 0.5, 0.5)
+    volume, se, mean_error = multiple_deterministic_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs\nESTIMATED AREA: {area}\n" +
+    print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs\nESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
@@ -240,9 +240,9 @@ def optimal_box_distribution(probs, num_estimations=10):
 
 def exercise_1_3():
     print("ASSIGNMENT 1.3a")
-    area, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75, z_0=0.1)
+    volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75, z_0=0.1)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {area}\n" +
+    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     print("ASSIGNMENT 1.3b")
     ps_to_evaluate = np.linspace(0, 1, 21)
@@ -264,7 +264,7 @@ def exercise_1_3():
     mean_error = np.mean(errors)
     std_between_runs = np.std(estimates, ddof=1)
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {mean_estimate:.3f}\n" +
+    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED VOLUME: {mean_estimate:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
