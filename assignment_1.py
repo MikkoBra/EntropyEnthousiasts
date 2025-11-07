@@ -96,22 +96,54 @@ def error(intersection):
     # Multiply by bounding box volume to get error of estimated volume
     return np.pow(BOX_BOUND, 3) * std / np.sqrt(SAMPLE_SIZE)
 
+def create_figure(samples, intersection, nonintersection, estimates, name=None):
+    fig = plt.figure(figsize=(20,10))
+    fig.suptitle(name)
+    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
+    plot_samples(samples, intersection, nonintersection, ax=ax1)
+    ax2 = fig.add_subplot(1, 2, 2)
+    plot_means(estimates, ax=ax2)
+    plt.savefig(f"figures/{name}.png")
 
-def plot_intersection(x, y, z, sample_fraction=1, fig=None):
-    """
-    Displays points in 3D space using a scatter plot. If sample_fraction is passed and not 1,
-    the defined fraction will be sampled from the points for plotting.
-    """
-    if sample_fraction != 1:
-        idx = np.random.choice(len(x), int(len(x) * sample_fraction), replace=False)
-        x, y, z = x[idx], y[idx], z[idx]
-    if fig is None:
-        fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    ax.scatter(x, y, z)
+
+def plot_samples(samples, intersection, nonintersection, fig=None, intersection_sample_fraction=0.1, nonintersection_sample_fraction=0.1, ax=None):
+    samples = np.array(samples)
+    intersection = np.array(intersection)
+    nonintersection = np.array(nonintersection)
+
+    intersection_idx = np.random.choice(len(intersection[0]), int(len(intersection[0]) * intersection_sample_fraction), replace=False)
+    nonintersection_idx = np.random.choice(len(nonintersection[0]), int(len(nonintersection[0]) * nonintersection_sample_fraction), replace=False)
+
+    if ax is None:
+        fig = plt.figure(figsize=(10,10))
+        ax = fig.add_subplot(projection='3d')
+    ax.scatter(intersection[0, intersection_idx], intersection[1, intersection_idx], intersection[2, intersection_idx], c='g', alpha=0.5, label="Hit")
+    ax.scatter(nonintersection[0, nonintersection_idx], nonintersection[1, nonintersection_idx], nonintersection[2, nonintersection_idx], c='r', alpha=0.1, label="Miss")
     ax.set_xlabel(r'$x$')
     ax.set_ylabel(r'$y$')
     ax.set_zlabel(r'$z$')
+    ax.set_xlim(-BOX_BOUND/2, BOX_BOUND/2)
+    ax.set_ylim(-BOX_BOUND/2, BOX_BOUND/2)
+    ax.set_zlim(-BOX_BOUND/2, BOX_BOUND/2)
+    ax.legend()
+    ax.set_title("Samples")
+    ax.view_init(elev=45, azim=-45, roll=0)
+
+def plot_means(estimates, ax=None):
+    means = np.zeros(NUM_ESTIMATIONS)
+    stderrs = np.zeros(NUM_ESTIMATIONS)
+    for i in range(NUM_ESTIMATIONS):
+        if i == 0:
+            means[i] = estimates[i]
+            continue
+        means[i] = np.mean(estimates[:i])
+    if ax is None:
+        fig = plt.figure(figsize=(10,10))
+        ax = fig.add_subplot()
+    ax.plot(np.arange(len(means)), means, 'b', label="Mean volume estimate")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Mean area estimate")
+    ax.set_title("Mean volume estimate over iterations")
 
 
 def estimate_volume(intersection, box_bound):
@@ -138,6 +170,10 @@ def multiple_uniform_runs(k, r, R, z_0=0):
     mean_error = np.mean(errors)
     std_between_runs = np.std(estimates, ddof=1)
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
+    figname = f"Uniform samples, k = {k}, R = {R}, r = {r}"
+    if z_0 > 0:
+        figname += f", z_0 = {z_0}"
+    create_figure(samples, intersection, nonintersection, estimates, figname)
     return mean_estimate, se, mean_error
 
 
@@ -156,6 +192,8 @@ def multiple_deterministic_runs(k, r, R):
     mean_error = np.mean(errors)
     std_between_runs = np.std(estimates, ddof=1)
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
+    figname = f"Deterministic samples, k = {k}, R = {R}, r = {r}"
+    create_figure(samples, intersection, nonintersection, estimates, figname)
     return mean_estimate, se, mean_error
 
 
@@ -164,23 +202,23 @@ def exercise_1_1():
     area, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED AREA: {area}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}\n")
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     area, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED AREA: {area}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}")
+    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED AREA: {area:.3f}\n" +
+          f"STANDARD ERROR: {se}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
 
 
 def exercise_1_2():
     print("ASSIGNMENT 1.2")
     area, se, mean_error = multiple_deterministic_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {area}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}")
+    print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs\nESTIMATED AREA: {area:.3f}\n" +
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     area, se, mean_error = multiple_deterministic_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, r = 0.5 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {area}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}\n")
+    print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs\nESTIMATED AREA: {area}\n" +
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
 def optimal_box_distribution(probs, num_estimations=10):
@@ -205,14 +243,14 @@ def exercise_1_3():
     area, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75, z_0=0.1)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {area}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}\n")
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     print("ASSIGNMENT 1.3b")
     ps_to_evaluate = np.linspace(0, 1, 21)
     print("CALCULATING OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY p:")
     p_B, mean_errors = optimal_box_distribution(ps_to_evaluate)
-    print("BETWEEN-RUN MEAN ERROR PER p:")
+    print("STANDARD MEAN ERROR PER p:")
     for i, mean_error in enumerate(mean_errors):
-        print(f"{ps_to_evaluate[i]:.2}:\t{mean_error:.4}")
+        print(f"{ps_to_evaluate[i]:.2f}:\t{mean_error:.4f}")
     print(f"OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY: {p_B}")
     estimates = np.zeros(NUM_ESTIMATIONS)
     errors = np.zeros(NUM_ESTIMATIONS)
@@ -226,11 +264,10 @@ def exercise_1_3():
     mean_error = np.mean(errors)
     std_between_runs = np.std(estimates, ddof=1)
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {mean_estimate}\n" +
-          f"BETWEEN-RUN ERROR: {se}\nMEAN ERROR: {mean_error}, ESTIMATE STD: {std_between_runs}")
+    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED AREA: {mean_estimate:.3f}\n" +
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
 exercise_1_1()
 exercise_1_2()
 exercise_1_3()
-
