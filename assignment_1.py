@@ -66,9 +66,10 @@ def deterministic_sample(num_samples, box, m=3.8, seed=0.5):
     y = deterministic_sample_single_sequence(num_samples, seed + 0.01, m)
     z = deterministic_sample_single_sequence(num_samples, seed - 0.01, m)
 
-    x = x * BOX_BOUND - BOX_BOUND/2
-    y = y * BOX_BOUND - BOX_BOUND/2
-    z = z * BOX_BOUND - BOX_BOUND/2
+    x = BOX_BOUND * (x - 0.5)
+    y = BOX_BOUND * (y - 0.5)
+    z = BOX_BOUND * (z - 0.5)
+
     return (x, y, z)
 
 
@@ -201,12 +202,12 @@ def exercise_1_1():
     print("ASSIGNMENT 1.1")
     volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED VOLUME: {volume}\n" +
+    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     volume, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
-          f"STANDARD ERROR: {se}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+          f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
 
 
 def exercise_1_2():
@@ -268,6 +269,21 @@ def exercise_1_3():
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
+def deterministic_rng_test():
+    sample = deterministic_sample_single_sequence(10000, x_0=0.5, m=3.8)
+    expectation = np.mean(sample)
+    plt.figure()
+    plt.hist(sample, bins=100)
+    plt.xlabel('value')
+    plt.ylabel('frequency')
+    plt.axvline(expectation, linestyle='dotted', color='k', label='Expected value')
+    plt.title('Deterministic pRNG Test')
+    plt.legend()
+    plt.savefig('figures/deterministic_rng_test.png')
+    print(f'Deterministic pRNG Expectation: {expectation:.3f}\n')
+
+
 exercise_1_1()
+deterministic_rng_test()
 exercise_1_2()
 exercise_1_3()
