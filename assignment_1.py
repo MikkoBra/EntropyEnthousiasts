@@ -2,12 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 np.random.seed(40)
-SAMPLE_SIZE = 100000
-NUM_ESTIMATIONS = 100
-BOX_BOUND = 3
-SMALL_BOX_BOUND = 1.5
-BOX_PROBABILITY = 0.5
-DETERMINISTIC_SEED = 0.7
+SAMPLE_SIZE = 100000            # Number of samples for Monte Carlo estimation
+NUM_ESTIMATIONS = 100           # Number of iterations of Monte Carlo to average the estimation over
+BOX_BOUND = 3                   # Side length of the bounding box
+SMALL_BOX_BOUND = 1.5           # Side length of the smaller bounding box
+BOX_PROBABILITY = 0.5           # Probability to sample from the big bounding box in mixed sampling
+FIND_OPTIMAL_BOX_P = False      # Find optimal big box sampling probability using mean within-run error
+DETERMINISTIC_SEED = 0.7        # Seed for the logistic map sampling method
+
+
+################################# CONDITIONALS AND SAMPLING #################################
 
 def is_in_sphere(x, y, z, k):
     """
@@ -35,15 +39,19 @@ def uniform_random_sample_cube(size, z_center, num_samples):
     )
 
 
-def mixture_sample_cube(p_B, num_samples):
+def mixture_sample_cube(p_B, num_samples, box_bound, small_box_bound):
     """
     Uniformly samples within two bounding boxes; one bigger box centered at 0, one
     smaller box centered at 0.1. The probability of sampling from the bigger box is
     defined by p_B.
     """
+    if p_B == 1.0:
+        return uniform_random_sample_cube(box_bound, 0, num_samples)
+    elif p_B == 0:
+        return uniform_random_sample_cube(small_box_bound, 0.1, num_samples)
     num_B_samples = int(num_samples * p_B)
-    x_B, y_B, z_B = uniform_random_sample_cube(BOX_BOUND, 0, num_B_samples)
-    x_S, y_S, z_S = uniform_random_sample_cube(SMALL_BOX_BOUND, 0.1, num_samples - num_B_samples)
+    x_B, y_B, z_B = uniform_random_sample_cube(box_bound, 0, num_B_samples)
+    x_S, y_S, z_S = uniform_random_sample_cube(small_box_bound, 0.1, num_samples - num_B_samples)
     x_total = np.concatenate([x_B, x_S])
     y_total = np.concatenate([y_B, y_S])
     z_total = np.concatenate([z_B, z_S])
@@ -73,6 +81,8 @@ def deterministic_sample(num_samples, box, m=3.8, seed=0.5):
     return (x, y, z)
 
 
+################################# ANALYSIS #################################
+
 def points_in_intersection(samples, k, r, R, x_0=0, y_0=0, z_0=0):
     """
     Checks for points (x,y,z) if they exist in the intersection between a sphere with radius
@@ -81,21 +91,115 @@ def points_in_intersection(samples, k, r, R, x_0=0, y_0=0, z_0=0):
     Returns number of points in intersection, and the x, y and z arrays containing those points.
     """
     x_array, y_array, z_array = samples
-    mask = is_in_sphere(x_array, y_array, z_array, k) & is_in_torus(x_array, y_array, z_array, r, R, x_0, y_0, z_0)
+    mask = is_in_sphere(x_array, y_array, z_array, k) &\
+            is_in_torus(x_array, y_array, z_array, r, R, x_0, y_0, z_0)
     intersection = (x_array[mask], y_array[mask], z_array[mask])
     non_intersection = (x_array[~mask], y_array[~mask], z_array[~mask])
     return intersection, non_intersection
 
 
-def error(intersection):
+def error(intersection, p_B=1):
     """
     Calculates error of estimated volume using a binomial distribution.
     """
     x_in, _, _ = intersection
     probability_in = len(x_in) / SAMPLE_SIZE
     std = np.sqrt(probability_in * (1 - probability_in))
-    # Multiply by bounding box volume to get error of estimated volume
-    return np.pow(BOX_BOUND, 3) * std / np.sqrt(SAMPLE_SIZE)
+    return (
+        ((p_B * (BOX_BOUND ** 3))
+        + ((1 - p_B) * (BOX_BOUND ** 3)))
+        * std / np.sqrt(SAMPLE_SIZE)
+    )
+
+
+def estimate_volume(intersection, box_bound, small_box_bound=0, p_B=1):
+    """
+    Estimates the volume of the intersection between a sphere with radius k and a torus with
+    minor radius r, major radius R using Monte Carlo simulation and random uniform sampling.
+    """
+    x_in, _, _ = intersection
+    in_box = SAMPLE_SIZE
+    estimated_volume = (
+        p_B * (len(x_in) / SAMPLE_SIZE) * box_bound**3
+        + (1 - p_B) * small_box_bound**3 * (len(x_in) / SAMPLE_SIZE)
+    )
+    return estimated_volume
+
+
+def multiple_uniform_runs(k, r, R, z_0=0):
+    """
+    Runs multiple Monte Carlo estimations based on uniform sampling of a single bounding
+    box. Returns the mean estimate, the standard error between runs, and the mean
+    within-run error.
+    """
+    estimates = np.zeros(NUM_ESTIMATIONS)
+    errors = np.zeros(NUM_ESTIMATIONS)
+    print(f"Performing {NUM_ESTIMATIONS} Monte Carlo estimations...")
+    for i in range(NUM_ESTIMATIONS):
+        samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
+        intersection, nonintersection = points_in_intersection(samples, k, r, R, z_0=z_0)
+        volume = estimate_volume(intersection, BOX_BOUND)
+        estimates[i] = volume
+        errors[i] = error(intersection)
+    mean_estimate = np.mean(estimates)
+    mean_error = np.mean(errors)
+    std_between_runs = np.std(estimates, ddof=1)
+    se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
+    figname = f"Uniform samples, k = {k}, R = {R}, r = {r}"
+    if z_0 > 0:
+        figname += f", z_0 = {z_0}"
+    create_figure(samples, intersection, nonintersection, estimates, figname)
+    return mean_estimate, se, mean_error
+
+
+def multiple_deterministic_runs(k, r, R):
+    """
+    Runs multiple Monte Carlo estimations based on deterministic sampling of a
+    single bounding box. Returns the mean estimate, the standard error between
+    runs, and the mean within-run error.
+    """
+    estimates = np.zeros(NUM_ESTIMATIONS)
+    errors = np.zeros(NUM_ESTIMATIONS)
+    seed = DETERMINISTIC_SEED
+    print(f"Performing {NUM_ESTIMATIONS} Monte Carlo estimations...")
+    for i in range(NUM_ESTIMATIONS):
+        samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=seed)
+        intersection, nonintersection = points_in_intersection(samples, k, r, R)
+        volume = estimate_volume(intersection, BOX_BOUND)
+        estimates[i] = volume
+        errors[i] = error(intersection)
+        seed += 0.0001
+    mean_estimate = np.mean(estimates)
+    mean_error = np.mean(errors)
+    std_between_runs = np.std(estimates, ddof=1)
+    se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
+    figname = f"Deterministic samples, k = {k}, R = {R}, r = {r}"
+    create_figure(samples, intersection, nonintersection, estimates, figname)
+    return mean_estimate, se, mean_error
+    
+
+def optimal_box_distribution(probs, num_estimations=10):
+    """
+    Finds the big bounding box sampling probability that yields the lowest mean
+    within-run error.
+    """
+    best_error = np.inf
+    best_probability = 0
+    mean_errors = np.zeros_like(probs)
+    for i, probability in enumerate(probs):
+        errors = np.zeros(num_estimations)
+        for j in range(num_estimations):
+            samples = mixture_sample_cube(probability, SAMPLE_SIZE, BOX_BOUND, SMALL_BOX_BOUND)
+            intersection, _ = points_in_intersection(samples, 1, 0.4, 0.75, z_0=0.1)
+            errors[j] = error(intersection)
+        if np.mean(errors) < best_error:
+            best_error = np.mean(errors)
+            best_probability = probability
+        mean_errors[i] = np.mean(errors)
+    return best_probability, mean_errors
+
+
+################################# PLOTS #################################
 
 def create_figure(samples, intersection, nonintersection, estimates, name=None):
     fig = plt.figure(figsize=(20,10))
@@ -128,7 +232,7 @@ def plot_samples(samples, intersection, nonintersection, fig=None, intersection_
     ax.set_zlim(-BOX_BOUND/2, BOX_BOUND/2)
     ax.legend()
     ax.set_title("Samples")
-    ax.view_init(elev=45, azim=-45, roll=0)
+    ax.view_init(elev=45, azim=-45)
 
 def plot_means(estimates, ax=None):
     means = np.zeros(NUM_ESTIMATIONS)
@@ -147,125 +251,70 @@ def plot_means(estimates, ax=None):
     ax.set_title("Mean volume estimate over iterations")
 
 
-def estimate_volume(intersection, box_bound):
-    x_in, _, _ = intersection
-    """
-    Estimates the volume of the intersection between a sphere with radius k and a torus with
-    minor radius r, major radius R using Monte Carlo simulation and random uniform sampling.
-    """
-    in_box = SAMPLE_SIZE
-    estimated_volume = (len(x_in) / in_box) * box_bound**3
-    return estimated_volume
-
-
-def multiple_uniform_runs(k, r, R, z_0=0):
-    estimates = np.zeros(NUM_ESTIMATIONS)
-    errors = np.zeros(NUM_ESTIMATIONS)
-    for i in range(NUM_ESTIMATIONS):
-        samples = uniform_random_sample_cube(BOX_BOUND, 0, SAMPLE_SIZE)
-        intersection, nonintersection = points_in_intersection(samples, k, r, R, z_0=z_0)
-        volume = estimate_volume(intersection, BOX_BOUND)
-        estimates[i] = volume
-        errors[i] = error(intersection)
-    mean_estimate = np.mean(estimates)
-    mean_error = np.mean(errors)
-    std_between_runs = np.std(estimates, ddof=1)
-    se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
-    figname = f"Uniform samples, k = {k}, R = {R}, r = {r}"
-    if z_0 > 0:
-        figname += f", z_0 = {z_0}"
-    create_figure(samples, intersection, nonintersection, estimates, figname)
-    return mean_estimate, se, mean_error
-
-
-def multiple_deterministic_runs(k, r, R):
-    estimates = np.zeros(NUM_ESTIMATIONS)
-    errors = np.zeros(NUM_ESTIMATIONS)
-    seed = DETERMINISTIC_SEED
-    for i in range(NUM_ESTIMATIONS):
-        samples = deterministic_sample(SAMPLE_SIZE, BOX_BOUND, seed=seed)
-        intersection, nonintersection = points_in_intersection(samples, k, r, R)
-        volume = estimate_volume(intersection, BOX_BOUND)
-        estimates[i] = volume
-        errors[i] = error(intersection)
-        seed += 0.0001
-    mean_estimate = np.mean(estimates)
-    mean_error = np.mean(errors)
-    std_between_runs = np.std(estimates, ddof=1)
-    se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
-    figname = f"Deterministic samples, k = {k}, R = {R}, r = {r}"
-    create_figure(samples, intersection, nonintersection, estimates, figname)
-    return mean_estimate, se, mean_error
-
+################################# RESULTS #################################
 
 def exercise_1_1():
     print("ASSIGNMENT 1.1")
+    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
+    print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
+    print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
 
 
 def exercise_1_2():
     print("ASSIGNMENT 1.2")
+    deterministic_rng_test()
+    print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs")
     volume, se, mean_error = multiple_deterministic_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs\nESTIMATED VOLUME: {volume:.3f}\n" +
+    print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs")
     volume, se, mean_error = multiple_deterministic_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs\nESTIMATED VOLUME: {volume}\n" +
+    print(f"ESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
-    
-
-def optimal_box_distribution(probs, num_estimations=10):
-    best_error = np.inf
-    best_probability = 0
-    mean_errors = np.zeros_like(probs)
-    for i, probability in enumerate(probs):
-        errors = np.zeros(num_estimations)
-        for j in range(num_estimations):
-            samples = mixture_sample_cube(probability, SAMPLE_SIZE)
-            intersection, _ = points_in_intersection(samples, 1, 0.4, 0.75, z_0=0.1)
-            errors[j] = error(intersection)
-        if np.mean(errors) < best_error:
-            best_error = np.mean(errors)
-            best_probability = probability
-        mean_errors[i] = np.mean(errors)
-    return best_probability, mean_errors
 
 
 def exercise_1_3():
     print("ASSIGNMENT 1.3a")
+    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75, z_0=0.1)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED VOLUME: {volume}\n" +
+    print(f"ESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     print("ASSIGNMENT 1.3b")
-    ps_to_evaluate = np.linspace(0, 1, 21)
-    print("CALCULATING OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY p:")
-    p_B, mean_errors = optimal_box_distribution(ps_to_evaluate)
-    print("STANDARD MEAN ERROR PER p:")
-    for i, mean_error in enumerate(mean_errors):
-        print(f"{ps_to_evaluate[i]:.2f}:\t{mean_error:.4f}")
-    print(f"OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY: {p_B}")
+    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs")
+    if FIND_OPTIMAL_BOX_P:
+        ps_to_evaluate = np.linspace(0, 1, 21)
+        print("CALCULATING OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY p:")
+        p_B, mean_errors = optimal_box_distribution(ps_to_evaluate)
+        print("STANDARD MEAN ERROR PER p:")
+        for i, mean_error in enumerate(mean_errors):
+            print(f"{ps_to_evaluate[i]:.2f}:\t{mean_error:.4f}")
+        print(f"OPTIMAL LARGE BOUNDING BOX SAMPLE PROBABILITY: {p_B}")
+    else:
+        p_B = BOX_PROBABILITY
     estimates = np.zeros(NUM_ESTIMATIONS)
     errors = np.zeros(NUM_ESTIMATIONS)
+    print(f"Performing {NUM_ESTIMATIONS} Monte Carlo estimations...")
     for i in range(NUM_ESTIMATIONS):
-        samples = mixture_sample_cube(p_B, SAMPLE_SIZE)
+        samples = mixture_sample_cube(p_B, SAMPLE_SIZE, BOX_BOUND, SMALL_BOX_BOUND)
         intersection, nonintersection = points_in_intersection(samples, 1, 0.4, 0.75, z_0=0.1)
-        volume = estimate_volume(intersection, BOX_BOUND)
+        volume = estimate_volume(intersection, BOX_BOUND, SMALL_BOX_BOUND, p_B)
         estimates[i] = volume
-        errors[i] = error(intersection)
+        errors[i] = error(intersection, p_B)
     mean_estimate = np.mean(estimates)
     mean_error = np.mean(errors)
     std_between_runs = np.std(estimates, ddof=1)
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
-    print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs\nESTIMATED VOLUME: {mean_estimate:.3f}\n" +
+    print(f"ESTIMATED VOLUME: {mean_estimate:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
     
 
@@ -284,6 +333,5 @@ def deterministic_rng_test():
 
 
 exercise_1_1()
-deterministic_rng_test()
 exercise_1_2()
 exercise_1_3()
