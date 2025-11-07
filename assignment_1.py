@@ -258,21 +258,23 @@ def plot_means(estimates, ax=None):
 
 ################################# RESULTS #################################
 
-def exercise_1_1():
+def exercise_1_1(results_array):
     print("ASSIGNMENT 1.1")
     print(f"Case: k = 1, R = 0.75, and r = 0.4, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.1 Case 1: "] = volume
     print(f"Case: k = 1, R = 0.5, and r = 0.5, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.1 Case 2: "] = volume
 
 
-def exercise_1_2():
+def exercise_1_2(results_array):
     print("ASSIGNMENT 1.2")
     deterministic_rng_test()
     print(f"Case: k = 1, R = 0.75, r = 0.4, 100 runs")
@@ -280,20 +282,23 @@ def exercise_1_2():
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {volume:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.2 Case 1: "] = volume
     print(f"Case: k = 1, R = 0.5, r = 0.5, 100 runs")
     volume, se, mean_error = multiple_deterministic_runs(1, 0.5, 0.5)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.2 Case 2: "] = volume
 
 
-def exercise_1_3():
+def exercise_1_3(results_array):
     print("ASSIGNMENT 1.3a")
     print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs")
     volume, se, mean_error = multiple_uniform_runs(1, 0.4, 0.75, z_0=0.1)
     std_between_runs = se * np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {volume}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.3 Case 1: "] = volume
     print("ASSIGNMENT 1.3b")
     print(f"Case: k = 1, R = 0.75, r = 0.4 and z_0 = 0.1, 100 runs")
     if FIND_OPTIMAL_BOX_P:
@@ -321,9 +326,13 @@ def exercise_1_3():
     se = std_between_runs / np.sqrt(NUM_ESTIMATIONS)
     print(f"ESTIMATED VOLUME: {mean_estimate:.3f}\n" +
           f"STANDARD ERROR: {se:.3f}\nMEAN ERROR: {mean_error:.3f}, ESTIMATE STD: {std_between_runs:.3f}\n")
+    results_array["1.3 Case 1 mixed: "] = mean_estimate
     
 
 def deterministic_rng_test():
+    """
+    Plots the distribution of the samples from the deterministic sampling method.
+    """
     sample = deterministic_sample_single_sequence(10000, x_0=0.5, m=3.8)
     expectation = np.mean(sample)
     plt.figure()
@@ -340,7 +349,10 @@ def deterministic_rng_test():
         plt.close()
     print(f'Deterministic pRNG Expectation: {expectation:.3f}\n')
 
-
-exercise_1_1()
-exercise_1_2()
-exercise_1_3()
+results = {}
+exercise_1_1(results)
+exercise_1_2(results)
+exercise_1_3(results)
+print("##################################\n\tESTIMATES OVERVIEW\n##################################")
+for key, item in results.items():
+    print(f"{key}{item:.4}")
