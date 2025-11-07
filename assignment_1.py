@@ -8,6 +8,7 @@ BOX_BOUND = 3
 SMALL_BOX_BOUND = 1.5
 BOX_PROBABILITY = 0.5
 DETERMINISTIC_SEED = 0.7
+SAVE_FIGURES = False
 
 def is_in_sphere(x, y, z, k):
     """
@@ -95,7 +96,7 @@ def error(intersection):
     probability_in = len(x_in) / SAMPLE_SIZE
     std = np.sqrt(probability_in * (1 - probability_in))
     # Multiply by bounding box volume to get error of estimated volume
-    return np.pow(BOX_BOUND, 3) * std / np.sqrt(SAMPLE_SIZE)
+    return BOX_BOUND**3 * std / np.sqrt(SAMPLE_SIZE)
 
 def create_figure(samples, intersection, nonintersection, estimates, name=None):
     fig = plt.figure(figsize=(20,10))
@@ -104,7 +105,11 @@ def create_figure(samples, intersection, nonintersection, estimates, name=None):
     plot_samples(samples, intersection, nonintersection, ax=ax1)
     ax2 = fig.add_subplot(1, 2, 2)
     plot_means(estimates, ax=ax2)
-    plt.savefig(f"figures/{name}.png")
+    if SAVE_FIGURES:
+        plt.savefig(f"figures/{name}.png")
+    else:
+        plt.show()
+        plt.close()
 
 
 def plot_samples(samples, intersection, nonintersection, fig=None, intersection_sample_fraction=0.1, nonintersection_sample_fraction=0.1, ax=None):
@@ -128,7 +133,7 @@ def plot_samples(samples, intersection, nonintersection, fig=None, intersection_
     ax.set_zlim(-BOX_BOUND/2, BOX_BOUND/2)
     ax.legend()
     ax.set_title("Samples")
-    ax.view_init(elev=45, azim=-45, roll=0)
+    ax.view_init(elev=45, azim=-45)
 
 def plot_means(estimates, ax=None):
     means = np.zeros(NUM_ESTIMATIONS)
@@ -279,7 +284,11 @@ def deterministic_rng_test():
     plt.axvline(expectation, linestyle='dotted', color='k', label='Expected value')
     plt.title('Deterministic pRNG Test')
     plt.legend()
-    plt.savefig('figures/deterministic_rng_test.png')
+    if SAVE_FIGURES:
+        plt.savefig('figures/deterministic_rng_test.png')
+    else:
+        plt.show()
+        plt.close()
     print(f'Deterministic pRNG Expectation: {expectation:.3f}\n')
 
 
