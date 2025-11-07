@@ -9,6 +9,7 @@ SMALL_BOX_BOUND = 1.5           # Side length of the smaller bounding box
 BOX_PROBABILITY = 0.5           # Probability to sample from the big bounding box in mixed sampling
 FIND_OPTIMAL_BOX_P = False      # Find optimal big box sampling probability using mean within-run error
 DETERMINISTIC_SEED = 0.7        # Seed for the logistic map sampling method
+SAVE_FIGURES = False            # Save figures to local files
 
 
 ################################# CONDITIONALS AND SAMPLING #################################
@@ -203,12 +204,16 @@ def optimal_box_distribution(probs, num_estimations=10):
 
 def create_figure(samples, intersection, nonintersection, estimates, name=None):
     fig = plt.figure(figsize=(20,10))
-    fig.suptitle(name)
+    fig.suptitle(name, fontsize=20)
     ax1 = fig.add_subplot(1, 2, 1, projection='3d')
     plot_samples(samples, intersection, nonintersection, ax=ax1)
     ax2 = fig.add_subplot(1, 2, 2)
     plot_means(estimates, ax=ax2)
-    plt.savefig(f"figures/{name}.png")
+    if SAVE_FIGURES:
+        plt.savefig(f"figures/{name}.png")
+    else:
+        plt.show()
+        plt.close()
 
 
 def plot_samples(samples, intersection, nonintersection, fig=None, intersection_sample_fraction=0.1, nonintersection_sample_fraction=0.1, ax=None):
@@ -224,14 +229,14 @@ def plot_samples(samples, intersection, nonintersection, fig=None, intersection_
         ax = fig.add_subplot(projection='3d')
     ax.scatter(intersection[0, intersection_idx], intersection[1, intersection_idx], intersection[2, intersection_idx], c='g', alpha=0.5, label="Hit")
     ax.scatter(nonintersection[0, nonintersection_idx], nonintersection[1, nonintersection_idx], nonintersection[2, nonintersection_idx], c='r', alpha=0.1, label="Miss")
-    ax.set_xlabel(r'$x$')
-    ax.set_ylabel(r'$y$')
-    ax.set_zlabel(r'$z$')
+    ax.set_xlabel(r'$x$', fontsize=16)
+    ax.set_ylabel(r'$y$', fontsize=16)
+    ax.set_zlabel(r'$z$', fontsize=16)
     ax.set_xlim(-BOX_BOUND/2, BOX_BOUND/2)
     ax.set_ylim(-BOX_BOUND/2, BOX_BOUND/2)
     ax.set_zlim(-BOX_BOUND/2, BOX_BOUND/2)
-    ax.legend()
-    ax.set_title("Samples")
+    ax.legend(fontsize=16)
+    ax.set_title("Samples", fontsize=18)
     ax.view_init(elev=45, azim=-45)
 
 def plot_means(estimates, ax=None):
@@ -246,9 +251,9 @@ def plot_means(estimates, ax=None):
         fig = plt.figure(figsize=(10,10))
         ax = fig.add_subplot()
     ax.plot(np.arange(len(means)), means, 'b', label="Mean volume estimate")
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Mean volume estimate")
-    ax.set_title("Mean volume estimate over iterations")
+    ax.set_xlabel("Iteration", fontsize=16)
+    ax.set_ylabel("Mean volume estimate", fontsize=16)
+    ax.set_title("Mean volume estimate over iterations", fontsize=18)
 
 
 ################################# RESULTS #################################
@@ -328,7 +333,11 @@ def deterministic_rng_test():
     plt.axvline(expectation, linestyle='dotted', color='k', label='Expected value')
     plt.title('Deterministic pRNG Test')
     plt.legend()
-    plt.savefig('figures/deterministic_rng_test.png')
+    if SAVE_FIGURES:
+        plt.savefig('figures/deterministic_rng_test.png')
+    else:
+        plt.show()
+        plt.close()
     print(f'Deterministic pRNG Expectation: {expectation:.3f}\n')
 
 
