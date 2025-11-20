@@ -34,7 +34,10 @@ def extract_columns(columns=COLUMNS, csv_path="airport.csv", delimiter=","):
     
     # Convert value arrays to numpy arrays
     for name in extracted:
-        extracted[name] = np.array(extracted[name])
+        if name == "Month":
+            extracted[name] = np.array(extracted[name], dtype=str)
+        else:
+            extracted[name] = np.array(extracted[name], dtype=float)
     
     return extracted
 
@@ -63,9 +66,65 @@ def filter_by_year(data, threshold=2019):
         filtered[col] = [values[i] for i in kept_data_indices]
     return filtered
 
+
+def filter_by_month(data, filter_month="September"):
+    """
+    Filters a data dictionary by the values of the "Month" column.
+
+    Parameters
+    -----------
+    data: Dictionary with column names as keys, data arrays as values
+    filter_month: String of month to include in kept data, other months
+        are excluded
+    
+    Returns
+    -----------
+    Filtered data dictionary with only entries where Month = filter_month
+    """
+    months = data["Month"]
+    kept_data_indices = [
+        i for i, month in enumerate(months)
+        if month == filter_month
+    ]
+    filtered = {}
+    for col, values in data.items():
+        filtered[col] = [values[i] for i in kept_data_indices]
+    return filtered
+    
+
 # Part 1
 
 ## Calculate Arrival Rate (λ) in passengers per minute
+
+
+def per_minute_arrival_rate(data):
+    """
+    Calculate the average arrival rate per minute (lambda) of passengers.
+
+    Parameters
+    -----------
+    data: Dictionary with column names as keys, data arrays as values.
+        Assumes column "Total Passengers" exists, and entries are per month.
+    
+    Returns
+    -----------
+    Arrival rate in passengers per minute
+    """
+    avg_monthly = np.mean(data["Total Passengers"])
+    avg_daily = avg_monthly / 30
+    avg_hourly = avg_daily / 16
+    return avg_hourly / 60
+
+
+data = extract_columns()
+data = filter_by_year(data)
+data = filter_by_month(data)
+
+# lambda (rate per minute)
+arrival_rate = per_minute_arrival_rate(data)
+print("------------------- PART 1 -------------------")
+print(f"Arrival rate per minute calculated from airport.csv: {arrival_rate:.2f}")
+
 
 # Part 2
 
