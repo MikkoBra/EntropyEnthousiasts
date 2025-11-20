@@ -38,6 +38,31 @@ def extract_columns(columns=COLUMNS, csv_path="airport.csv", delimiter=","):
     
     return extracted
 
+
+def filter_by_year(data, threshold=2019):
+    """
+    Filters a data dictionary by the values of the "Year" column.
+
+    Parameters
+    -----------
+    data: Dictionary with column names as keys, data arrays as values
+    threshold: Int of last year to include in kept data, later years
+        are excluded
+    
+    Returns
+    -----------
+    Filtered data dictionary with only entries where Year <= threshold
+    """
+    years = data["Year"]
+    kept_data_indices = [
+        i for i, year in enumerate(years)
+        if int(year) <= threshold
+    ]
+    filtered = {}
+    for col, values in data.items():
+        filtered[col] = [values[i] for i in kept_data_indices]
+    return filtered
+
 # Part 1
 
 ## Calculate Arrival Rate (λ) in passengers per minute
