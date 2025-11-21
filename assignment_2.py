@@ -142,13 +142,13 @@ class Passenger:
     Passenger class for airport arrivals.
     """
 
-    def __init__(self, env, passenger_id, lane_time, lanes):
+    def __init__(self, env, passenger_id, server_time, servers):
         """
         Initializes the passenger with a unique ID.
         """
         self.passenger_id = passenger_id
-        self.lane_time = lane_time
-        self.lanes = lanes
+        self.server_time = server_time
+        self.servers = servers
         self.env = env
         self.in_queue = False
         self.completed = False
@@ -157,12 +157,12 @@ class Passenger:
         start_time = self.env.now
         log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
         self.in_queue = True
-        with self.lanes.request() as req:
+        with self.servers.request() as req:
             yield req
-            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters lane")
+            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters server")
             self.in_queue = False
             self.queue_time = self.env.now - start_time
-            yield self.env.timeout(self.lane_time)
+            yield self.env.timeout(self.server_time)
             log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} leaves security")
             self.total_time = self.env.now - start_time
             self.completed = True
@@ -172,7 +172,7 @@ class AirportSimulator:
     Simulator class for airport arrivals.
     """
 
-    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_lanes=1, halt_steady_state=False, warmup_passengers=1000):
+    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_servers=1, halt_steady_state=False, warmup_passengers=1000):
         """
         Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
         """
@@ -180,10 +180,10 @@ class AirportSimulator:
         self.service_time_sigma = service_time_sigma
         self.arrival_rate = 1/arrivals_lambda # rate = 1 / arrivals per minute
         self.n_passengers = n_passengers
-        self.n_lanes = n_lanes
+        self.n_servers = n_servers
         self.halt_steady_state = halt_steady_state
         self.env = simpy.Environment()
-        self.lanes = simpy.Resource(self.env, capacity=self.n_lanes)
+        self.servers = simpy.Resource(self.env, capacity=self.n_servers)
         self.warmup_passengers = warmup_passengers
         self.last_passenger = 0
 
@@ -208,7 +208,7 @@ class AirportSimulator:
             service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
             while service_time < 0:
                 service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
-            passenger = Passenger(self.env, i+1, service_time, self.lanes)
+            passenger = Passenger(self.env, i+1, service_time, self.servers)
             self.env.process(passenger.run())
             self.passengers.append(passenger)
             self.last_passenger = i
@@ -251,23 +251,23 @@ class AirportSimulator:
         self.n_passengers = self.last_passenger + 1
         log.info(f"[{self.env.now:.1f}]: Simulated {self.n_passengers} passengers.")
         self.queue_times = np.zeros(self.n_passengers - self.warmup_passengers)
-        self.lane_times = np.zeros(self.n_passengers - self.warmup_passengers)
+        self.server_times = np.zeros(self.n_passengers - self.warmup_passengers)
         self.total_times = np.zeros(self.n_passengers - self.warmup_passengers)
         for i, j in enumerate(range(self.warmup_passengers, self.n_passengers)):
             self.queue_times[i] = self.passengers[j].queue_time
-            self.lane_times[i] = self.passengers[j].lane_time
+            self.server_times[i] = self.passengers[j].server_time
             self.total_times[i] = self.passengers[j].total_time
 
     def print_results(self):
         print(f"Total time: {self.total_time:.1f} minutes")
         print(f"Average queue time: {np.mean(self.queue_times):.2f} minutes, sd: {np.std(self.queue_times):.2f} minutes")
-        print(f"Average lane time: {np.mean(self.lane_times):.2f} minutes, sd: {np.std(self.lane_times):.2f} minutes")
+        print(f"Average service time: {np.mean(self.server_times):.2f} minutes, sd: {np.std(self.server_times):.2f} minutes")
         print(f"Average total time: {np.mean(self.total_times):.2f} minutes, sd: {np.std(self.total_times):.2f} minutes")
 
 
 ## Run sample simulation
 
-sample_sim = AirportSimulator(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_lanes=6)
+sample_sim = AirportSimulator(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_servers=6)
 print("~~~ Sample Simulation ~~~")
 sample_sim.start()
 sample_sim.print_results()
@@ -275,7 +275,7 @@ sample_sim.print_results()
 ## Validate the simulator
 
 print("\n~~~ Stable Test Rate ~~~")
-sim_2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_lanes=1)
+sim_2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
 sim_2a.start()
 sim_2a.print_results()
 
@@ -290,22 +290,27 @@ sim_2a.print_results()
 ## Evaluating Intervations
 
 print("\n~~~ Baseline ~~~")
-sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_lanes=1)
+sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=1)
 sim_baseline.start()
 sim_baseline.print_results()
 
 ### Intervention A
 
 print("\n~~~ Intervention A ~~~")
-sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_lanes=2)
+sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
 sim_intervention_a.start()    
 sim_intervention_a.print_results()
 
 ### Intervention B
 
 print("\n~~~ Intervention B ~~~")
-sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_lanes=1)
+sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
 sim_intervention_b.start()    
 sim_intervention_b.print_results()
 
 ### Bonus Intervention
+
+print("\n~~~ Bonus Intervention ~~~")
+sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=0.5, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
+sim_bonus.start()    
+sim_bonus.print_results()
