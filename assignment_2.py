@@ -203,7 +203,7 @@ class AirportSimulator:
             except simpy.Interrupt:
                 log.info(f"[{self.env.now:.1f}]: Steady state reached after {self.last_passenger} passengers. {self.count_queue()} passengers in queue.")
                 break
-            if i == self.warmup_passengers:
+            if i == self.warmup_passengers and self.warmup_passengers > 0:
                 log.info(f"[{self.env.now:.1f}]: Warmup period complete.")
             service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
             while service_time < 0:
@@ -257,7 +257,6 @@ class AirportSimulator:
             self.queue_times[i] = self.passengers[j].queue_time
             self.lane_times[i] = self.passengers[j].lane_time
             self.total_times[i] = self.passengers[j].total_time
-        self.print_results()
 
     def print_results(self):
         print(f"Total time: {self.total_time:.1f} minutes")
@@ -268,11 +267,17 @@ class AirportSimulator:
 
 ## Run sample simulation
 
-sample_sim = AirportSimulator(arrivals_lambda=20, expected_service_time=3, service_time_sigma=1, n_passengers=100000, warmup_passengers=10000, halt_steady_state=True, n_lanes=60)
+sample_sim = AirportSimulator(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_lanes=6)
 print("~~~ Sample Simulation ~~~")
 sample_sim.start()
+sample_sim.print_results()
 
 ## Validate the simulator
+
+print("\n~~~ Stable Test Rate ~~~")
+sim_2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_lanes=1)
+sim_2a.start()
+sim_2a.print_results()
 
 ### Establish Stable Test Rate
 
@@ -284,8 +289,23 @@ sample_sim.start()
 
 ## Evaluating Intervations
 
+print("\n~~~ Baseline ~~~")
+sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_lanes=1)
+sim_baseline.start()
+sim_baseline.print_results()
+
 ### Intervention A
 
+print("\n~~~ Intervention A ~~~")
+sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_lanes=2)
+sim_intervention_a.start()    
+sim_intervention_a.print_results()
+
 ### Intervention B
+
+print("\n~~~ Intervention B ~~~")
+sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_lanes=1)
+sim_intervention_b.start()    
+sim_intervention_b.print_results()
 
 ### Bonus Intervention
