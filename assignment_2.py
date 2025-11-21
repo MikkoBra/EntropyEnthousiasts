@@ -116,7 +116,7 @@ def per_minute_arrival_rate(data):
     -----------
     Arrival rate in passengers per minute
     """
-    avg_monthly = np.mean(data["Total Passengers"])
+    avg_monthly = np.mean(data["Total Passengers"])/50
     avg_daily = avg_monthly / 30
     avg_hourly = avg_daily / 16
     return avg_hourly / 60
