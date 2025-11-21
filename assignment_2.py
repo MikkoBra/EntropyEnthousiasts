@@ -1,5 +1,11 @@
 import csv
 import numpy as np
+import simpy
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+log = logging.getLogger('AirportSim')
+
 
 COLUMNS = np.array(["Year", "Month", "Europe Passengers", "Intercontinental Passengers", "Total Passengers"])
 
@@ -127,8 +133,144 @@ print(f"Arrival rate per minute calculated from airport.csv: {arrival_rate:.2f}"
 
 
 # Part 2
+print("\n------------------- PART 2 -------------------\n")
 
 ## Build a discrete-event simulator
+
+class Passenger:
+    """
+    Passenger class for airport arrivals.
+    """
+
+    def __init__(self, env, passenger_id, lane_time, lanes):
+        """
+        Initializes the passenger with a unique ID.
+        """
+        self.passenger_id = passenger_id
+        self.lane_time = lane_time
+        self.lanes = lanes
+        self.env = env
+        self.in_queue = False
+        self.completed = False
+    
+    def run(self):
+        start_time = self.env.now
+        log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
+        self.in_queue = True
+        with self.lanes.request() as req:
+            yield req
+            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters lane")
+            self.in_queue = False
+            self.queue_time = self.env.now - start_time
+            yield self.env.timeout(self.lane_time)
+            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} leaves security")
+            self.total_time = self.env.now - start_time
+            self.completed = True
+
+class AirportSimulator:
+    """
+    Simulator class for airport arrivals.
+    """
+
+    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_lanes=1, halt_steady_state=False, warmup_passengers=1000):
+        """
+        Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
+        """
+        self.expected_service_time = expected_service_time
+        self.service_time_sigma = service_time_sigma
+        self.arrival_rate = 1/arrivals_lambda # rate = 1 / arrivals per minute
+        self.n_passengers = n_passengers
+        self.n_lanes = n_lanes
+        self.halt_steady_state = halt_steady_state
+        self.env = simpy.Environment()
+        self.lanes = simpy.Resource(self.env, capacity=self.n_lanes)
+        self.warmup_passengers = warmup_passengers
+        self.last_passenger = 0
+
+    def count_queue(self):
+        in_queue = 0
+        for p in self.passengers:
+            if p.in_queue:
+                in_queue += 1
+        return in_queue
+
+    def passenger_arrivals(self):
+        self.passengers = []
+        for i in range(self.n_passengers):
+            next_arrival = np.random.exponential(self.arrival_rate)
+            try:
+                yield self.env.timeout(next_arrival)
+            except simpy.Interrupt:
+                log.info(f"[{self.env.now:.1f}]: Steady state reached after {self.last_passenger} passengers. {self.count_queue()} passengers in queue.")
+                break
+            if i == self.warmup_passengers:
+                log.info(f"[{self.env.now:.1f}]: Warmup period complete.")
+            service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
+            while service_time < 0:
+                service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
+            passenger = Passenger(self.env, i+1, service_time, self.lanes)
+            self.env.process(passenger.run())
+            self.passengers.append(passenger)
+            self.last_passenger = i
+        if len(self.passengers) == self.n_passengers:
+            log.info(f"[{self.env.now:.1f}]: All passengers have arrived. {self.count_queue()} still in queue.")
+        if self.halt_steady_state:
+            if self.sim_halter.is_alive:
+                self.sim_halter.interrupt()
+
+    def steady_halter(self):
+        """
+        Every 5 minutes, get the number of passengers in the queue. If that value is the same 5 times in a row and the warmup period is over, halt the simulation.
+        """
+        prev = np.zeros(5)
+        i=0
+        while True:
+            try:
+                yield self.env.timeout(5)
+            except simpy.Interrupt:
+                break
+            if self.last_passenger < self.warmup_passengers:
+                continue
+            i = (i+1) % 5
+            prev[i] = self.count_queue()
+            log.debug(f"[{int(np.round(self.env.now))}]: In queue: {prev[i]}")
+            if np.std(prev) == 0:
+                if self.sim_arrivals.is_alive:
+                    self.sim_arrivals.interrupt()
+                break
+            
+
+    def start(self):
+        start_time = self.env.now
+        self.sim_arrivals = self.env.process(self.passenger_arrivals())
+        if self.halt_steady_state:
+            self.sim_halter = self.env.process(self.steady_halter())
+        self.env.run()
+        log.info(f"[{self.env.now:.1f}]: Simulation complete.")
+        self.total_time = self.env.now - start_time
+        self.n_passengers = self.last_passenger + 1
+        log.info(f"[{self.env.now:.1f}]: Simulated {self.n_passengers} passengers.")
+        self.queue_times = np.zeros(self.n_passengers - self.warmup_passengers)
+        self.lane_times = np.zeros(self.n_passengers - self.warmup_passengers)
+        self.total_times = np.zeros(self.n_passengers - self.warmup_passengers)
+        for i, j in enumerate(range(self.warmup_passengers, self.n_passengers)):
+            self.queue_times[i] = self.passengers[j].queue_time
+            self.lane_times[i] = self.passengers[j].lane_time
+            self.total_times[i] = self.passengers[j].total_time
+        self.print_results()
+
+    def print_results(self):
+        print(f"Total time: {self.total_time:.1f} minutes")
+        print(f"Average queue time: {np.mean(self.queue_times):.2f} minutes, sd: {np.std(self.queue_times):.2f} minutes")
+        print(f"Average lane time: {np.mean(self.lane_times):.2f} minutes, sd: {np.std(self.lane_times):.2f} minutes")
+        print(f"Average total time: {np.mean(self.total_times):.2f} minutes, sd: {np.std(self.total_times):.2f} minutes")
+
+
+## Run sample simulation
+
+sample_sim = AirportSimulator(arrivals_lambda=20, expected_service_time=3, service_time_sigma=1, n_passengers=100000, warmup_passengers=10000, halt_steady_state=True, n_lanes=60)
+print("~~~ Sample Simulation ~~~")
+sample_sim.start()
 
 ## Validate the simulator
 
