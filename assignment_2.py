@@ -264,6 +264,25 @@ class AirportSimulator:
         print(f"Average service time: {np.mean(self.server_times):.2f} minutes, sd: {np.std(self.server_times):.2f} minutes")
         print(f"Average total time: {np.mean(self.total_times):.2f} minutes, sd: {np.std(self.total_times):.2f} minutes")
 
+def mg1_theoretical_Wq(target_utilization, service_mean, service_sd):
+    """
+    Calculates the theoretical average waiting time in queue (Wq) for an M/G/1 queue.
+
+    Parameters
+    -----------
+    target_utilization: Float representing the target utilization (ρ)
+    service_mean: Float representing the mean service time (E[S])
+    service_sd: Float representing the standard deviation of service time (σ[S])
+    
+    Returns
+    -----------
+    Theoretical average waiting time in queue (Wq)
+    """
+    ES2 = service_sd**2 + service_mean**2
+    rho = target_utilization * service_mean
+    Wq = (target_utilization * ES2) / (2 * (1 - rho))
+    return Wq
+
 
 ## Run sample simulation
 
@@ -281,11 +300,39 @@ sim_2a.print_results()
 
 ### Establish Stable Test Rate
 
+print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
+target_utilization = 0.85
+service_mean = 1
+service_sd = 0.25
+
 ### Theoretical Baseline
+
+theoretical_Wq = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
+print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes")
 
 ### Simulation Baseline
 
+R = 40
+rep_Wq = np.zeros(R)
+for r in range(R):
+    sim2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
+    sim2a.start()
+    rep_Wq[r] = np.mean(sim2a.queue_times)
+
+avg_Wq = np.mean(rep_Wq)
+sd_Wq = np.std(rep_Wq)
+print(f"Simulated average waiting time in queue (Wq): {avg_Wq:.4f} minutes, sd: {sd_Wq:.4f} minutes")
+
 ### Hypothesis Test
+
+t_stat = (avg_Wq - theoretical_Wq) / (sd_Wq / np.sqrt(R))
+t_critical = 1.96  # 95% confidence interval
+
+print(f"T-statistic: {t_stat:.4f}")
+if abs(t_stat) < t_critical:
+    print("Fail to reject the null hypothesis: The simulation matches the theoretical model.")
+else:
+    print("Reject the null hypothesis: The simulation does not match the theoretical model.")
 
 ## Evaluating Intervations
 
