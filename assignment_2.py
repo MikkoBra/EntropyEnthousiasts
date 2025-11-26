@@ -2,6 +2,9 @@ import csv
 import numpy as np
 import simpy
 import logging
+import matplotlib.pyplot as plt
+import os
+from math import erf
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 log = logging.getLogger('AirportSim')
@@ -264,6 +267,26 @@ class AirportSimulator:
         print(f"Average service time: {np.mean(self.server_times):.2f} minutes, sd: {np.std(self.server_times):.2f} minutes")
         print(f"Average total time: {np.mean(self.total_times):.2f} minutes, sd: {np.std(self.total_times):.2f} minutes")
 
+def mg1_theoretical_Wq(target_utilization, service_mean, service_sd):
+    """
+    Calculates the theoretical average waiting time in queue (Wq) for an M/G/1 queue.
+
+    Parameters
+    -----------
+    target_utilization: Float representing the target utilization (ρ)
+    service_mean: Float representing the mean service time (E[S])
+    service_sd: Float representing the standard deviation of service time (σ[S])
+    
+    Returns
+    -----------
+    Theoretical average waiting time in queue (Wq)
+    """
+    ES2 = service_sd**2 + service_mean**2
+    lambda_test = target_utilization / service_mean
+    assert lambda_test * service_mean < 1, "Chosen target utilization not stable."
+    Wq = (lambda_test * ES2) / (2 * (1 - target_utilization))
+    return Wq
+
 
 ## Run sample simulation
 
@@ -272,20 +295,81 @@ print("~~~ Sample Simulation ~~~")
 sample_sim.start()
 sample_sim.print_results()
 
-## Validate the simulator
 
-print("\n~~~ Stable Test Rate ~~~")
-sim_2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
-sim_2a.start()
-sim_2a.print_results()
+### Vaidate simulator
 
-### Establish Stable Test Rate
+def multiple_runs():
+    ### Establish Stable Test Rate
+    print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
+    target_utilization = 0.85
+    service_mean = 1
+    service_sd = 0.25
 
-### Theoretical Baseline
+    ### Simulation Baseline
+    R = 40
+    rep_Wq = np.zeros(R)
+    for r in range(R):
+        sim2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
+        sim2a.start()
+        rep_Wq[r] = np.mean(sim2a.total_times) # TODO: check if this is correct
+    data_folder = "a2_data"
+    os.makedirs(data_folder, exist_ok=True)
+    save_path = os.path.join(data_folder, "rep_Wq.npy")
+    np.save(save_path, rep_Wq)
+    print(f"Replication means saved to {save_path}")
 
-### Simulation Baseline
+    avg_Wq = np.mean(rep_Wq)
+    sd_Wq = np.std(rep_Wq, ddof=1)
+    print(f"Simulated average waiting time in queue (Wq): {avg_Wq:.4f} minutes, sd: {sd_Wq:.4f} minutes")
+    ### Theoretical Baseline
+    theoretical_Wq = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
+    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes")
 
-### Hypothesis Test
+    return rep_Wq, avg_Wq, theoretical_Wq, sd_Wq
+
+
+def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
+    ### Hypothesis Test
+    t_stat = (avg_Wq - theoretical_Wq) / (sd_Wq / np.sqrt(R))
+    t_critical = 2.0227  # 95% confidence interval with R=40, df=39
+
+    print(f"T-statistic: {t_stat:.4f}, T-critical: {t_critical}")
+    if abs(t_stat) < t_critical:
+        print("Fail to reject the null hypothesis: The simulation matches the theoretical model.")
+    else:
+        print("Reject the null hypothesis: The simulation does not match the theoretical model.")
+
+
+def wilcoxon(rep_Wq, theoretical_Wq):
+    diffs = rep_Wq - theoretical_Wq
+    diffs = diffs[diffs != 0]
+    abs_diffs = np.abs(diffs)
+    ranks = np.argsort(np.argsort(abs_diffs)) + 1
+
+    W_pos = np.sum(ranks[diffs > 0])
+    W_neg = np.sum(ranks[diffs < 0])
+    W = min(W_pos, W_neg)
+
+    print(f"Wilcoxon signed-rank test statistic W: {W}")
+
+    n = len(diffs)
+    # null hypothesis: positive and negative diffs are equally likely
+    expected_W = n * (n + 1) / 4
+    std_W = np.sqrt(n * (n + 1) * (2 * n + 1) / 24)
+    z = (W - expected_W) / std_W
+    p_value = 2 * (1 - 0.5 * (1 + erf(abs(z) / np.sqrt(2))))
+
+    print(f"Approximate p-value: {p_value:.4f}")
+    if p_value < 0.05:
+        print("Reject the null hypothesis: The simulation does not match the theoretical Wq.")
+    else:
+        print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
+
+
+rep_Wq, avg_Wq, theoretical_Wq, sd_Wq = multiple_runs()
+one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
+wilcoxon(rep_Wq, theoretical_Wq)
+
 
 ## Evaluating Intervations
 
