@@ -311,7 +311,7 @@ def multiple_runs():
     for r in range(R):
         sim2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
         sim2a.start()
-        rep_Wq[r] = np.mean(sim2a.total_times) # TODO: check if this is correct
+        rep_Wq[r] = np.mean(sim2a.queue_times) # TODO: check if this is correct
     data_folder = "a2_data"
     os.makedirs(data_folder, exist_ok=True)
     save_path = os.path.join(data_folder, "rep_Wq.npy")
@@ -364,37 +364,89 @@ def wilcoxon(rep_Wq, theoretical_Wq):
         print("Reject the null hypothesis: The simulation does not match the theoretical Wq.")
     else:
         print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
-
-
+    
 rep_Wq, avg_Wq, theoretical_Wq, sd_Wq = multiple_runs()
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
 
+def multiple_runs_part2B(arrival_rate, n_servers, service_sigma, service_mean, R=40):
+    rep_Wq = np.zeros(R)
+    for r in range(R):
+        sim2b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=service_sigma, n_passengers=3000, warmup_passengers=0, halt_steady_state=False, n_servers=n_servers)
+        sim2b.start()
+        rep_Wq[r] = np.mean(sim2b.queue_times) # TODO: check if this is correct
+    return rep_Wq, np.mean(rep_Wq), np.std(rep_Wq, ddof=1)
+
+def compare_interventions(sample1, sample2, name1, name2):
+    mean1, mean2 = np.mean(sample1), np.mean(sample2)
+    sd1, sd2 = np.std(sample1, ddof=1), np.std(sample2, ddof=1)
+    n1, n2 = len(sample1), len(sample2)
+
+    pooled_var = (((n1 - 1) * sd1**2) + ((n2 - 1) * sd2**2)) / (n1 + n2 - 2)
+    t_test = (mean1 - mean2) / np.sqrt(pooled_var * (1/n1 + 1/n2))
+    t_crit = 1.96  # two-tailed test for large samples
+
+    print(f"\nComparing {name1} and {name2}:")
+    print(f"T-statistic: {t_test:.4f}, T-critical: {t_crit}")
+    if abs(t_test) > t_crit:
+        print(f"Reject the null hypothesis: There is a significant difference between {name1} and {name2}.")
+    else:
+        print(f"Fail to reject the null hypothesis: No significant difference between {name1} and {name2}.")
+    
 
 ## Evaluating Intervations
 
 print("\n~~~ Baseline ~~~")
-sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=1)
-sim_baseline.start()
-sim_baseline.print_results()
+Wq_base, avg_base, sd_base = multiple_runs_part2B(arrival_rate=arrival_rate, n_servers=1, service_sigma=0.25, service_mean=1, R=40)
+print(f"Baseline average waiting time in queue (Wq): {avg_base:.4f} minutes, sd: {sd_base:.4f} minutes")
 
 ### Intervention A
 
 print("\n~~~ Intervention A ~~~")
-sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
-sim_intervention_a.start()    
-sim_intervention_a.print_results()
+Wq_a, avg_a, sd_a = multiple_runs_part2B(arrival_rate=arrival_rate, n_servers=2, service_sigma=0.25, service_mean=1, R=40)
+print(f"Intervention A average waiting time in queue (Wq): {avg_a:.4f} minutes, sd: {sd_a:.4f} minutes")
 
 ### Intervention B
 
 print("\n~~~ Intervention B ~~~")
-sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
-sim_intervention_b.start()    
-sim_intervention_b.print_results()
+Wq_b, avg_b, sd_b = multiple_runs_part2B(arrival_rate=arrival_rate, n_servers=1, service_sigma=0.1, service_mean=1, R=40)
+print(f"Intervention B average waiting time in queue (Wq): {avg_b:.4f} minutes, sd: {sd_b:.4f} minutes")
+
 
 ### Bonus Intervention
 
 print("\n~~~ Bonus Intervention ~~~")
-sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=0.5, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
-sim_bonus.start()    
-sim_bonus.print_results()
+Wq_bonus, avg_bonus, sd_bonus = multiple_runs_part2B(arrival_rate=arrival_rate, n_servers=2, service_sigma=0.25, service_mean=.5, R=40)
+print(f"Bonus Intervention average waiting time in queue (Wq): {avg_bonus:.4f} minutes, sd: {sd_bonus:.4f} minutes")
+
+compare_interventions(Wq_base, Wq_a, "Baseline", "Intervention A")
+compare_interventions(Wq_base, Wq_b, "Baseline", "Intervention B")
+compare_interventions(Wq_base, Wq_bonus, "Baseline", "Bonus Intervention")
+
+# ## Evaluating Intervations
+
+# print("\n~~~ Baseline ~~~")
+# sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=1)
+# sim_baseline.start()
+# sim_baseline.print_results()
+
+# ### Intervention A
+
+# print("\n~~~ Intervention A ~~~")
+# sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
+# sim_intervention_a.start()    
+# sim_intervention_a.print_results()
+
+# ### Intervention B
+
+# print("\n~~~ Intervention B ~~~")
+# sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
+# sim_intervention_b.start()    
+# sim_intervention_b.print_results()
+
+# ### Bonus Intervention
+
+# print("\n~~~ Bonus Intervention ~~~")
+# sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=0.5, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
+# sim_bonus.start()    
+# sim_bonus.print_results()
