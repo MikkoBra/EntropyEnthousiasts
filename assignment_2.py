@@ -189,7 +189,7 @@ class Passenger:
         """
         Defines the run behavior of the Passenger: enter queue, exit queue to be served, leave service.
         """
-        start_time = self.env.now
+        self.start_time = self.env.now
         if self.log_info:
             log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
         self.in_queue = True
@@ -198,11 +198,11 @@ class Passenger:
             if self.log_info:
                 log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters server")
             self.in_queue = False
-            self.queue_time = self.env.now - start_time
+            self.queue_time = self.env.now - self.start_time
             yield self.env.timeout(self.server_time)
             if self.log_info:
                 log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} leaves security")
-            self.total_time = self.env.now - start_time
+            self.total_time = self.env.now - self.start_time
             self.completed = True
 
 class AirportSimulator:
@@ -226,6 +226,7 @@ class AirportSimulator:
         self.warmup_passengers = params.warmup_passengers
         self.last_passenger = 0
         self.queue_snapshots = []
+        self.all_completed = []
         self.completed = False
         self.log_info = params.log_info
 
@@ -326,6 +327,7 @@ class AirportSimulator:
             log.info(f"[{self.env.now:.1f}]: Simulated {self.n_passengers} passengers.")
         completed_passengers = [p for p in self.passengers[self.warmup_passengers:] if p.completed]
         self.n_completed = len(completed_passengers)
+        self.all_completed = [p for p in self.passengers if p.completed]
         self.queue_times = np.array([p.queue_time for p in completed_passengers])
         self.server_times = np.array([p.server_time for p in completed_passengers])
         self.total_times = np.array([p.total_time for p in completed_passengers])
@@ -368,7 +370,7 @@ def check_utilization(arrival_rate, service_mean, n_servers=1):
 
 ############## VALIDATION ##############
 
-def multiple_runs(simulator_params, R=40, save_data=False, sim_label="chosen parameters"):
+def multiple_runs(simulator_params, R=40, save_data=False, sim_label="chosen parameters", file="base"):
     """
     Code for running multiple simulations with the same parameters
     and returning statistics from those simulations.
@@ -376,20 +378,31 @@ def multiple_runs(simulator_params, R=40, save_data=False, sim_label="chosen par
     simulator = AirportSimulator(simulator_params)
     ### Simulation Baseline
     rep_Wq = []
+    snapshots = []
     print(f"Running {R} simulations for {sim_label}...")
     while len(rep_Wq) < R:
         simulator.start()
         if len(simulator.queue_times) > 0:
             rep_Wq.append(np.mean(simulator.queue_times))
+            snapshots.append({
+                "passengers": np.array(list(range(len(simulator.all_completed)))),
+                "queue_times": np.array([p.queue_time for p in simulator.all_completed]),
+                "server_times": np.array([p.server_time for p in simulator.all_completed]),
+                "start_times": np.array([p.start_time for p in simulator.all_completed]),
+            })
         else:
             print(f"Warning: Replication attempt has no completed passengers. Retrying...")
     rep_Wq = np.array(rep_Wq)
+    snapshots = np.array(snapshots)
     if save_data:
         data_folder = "a2_data"
         os.makedirs(data_folder, exist_ok=True)
-        save_path = os.path.join(data_folder, "mean_queue_times.npy")
+        save_path = os.path.join(data_folder, f"mean_queue_times_{file}.npy")
         np.save(save_path, rep_Wq)
         print(f"Replication means saved to {save_path}")
+        save_path = os.path.join(data_folder, f"snapshots_{file}.npy")
+        np.save(save_path, snapshots)
+        print(f"Snapshots saved to {save_path}")
 
     avg_Wq = np.mean(rep_Wq)
     sd_Wq = np.std(rep_Wq, ddof=1)
@@ -405,7 +418,7 @@ def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
     - Normally distributed
     """
     t_stat = (avg_Wq - theoretical_Wq) / (sd_Wq / np.sqrt(R))
-    t_critical = 2.0227  # 95% confidence interval with R=40, df=39
+    t_critical = 1.96  # 95% confidence interval
 
     print(f"\nONE-SAMPLE T-TEST\nT-statistic: {t_stat:.4f}, T-critical: {t_critical}")
     if abs(t_stat) < t_critical:
@@ -427,8 +440,7 @@ def two_sample_t_test(mean1, mean2, sd1, sd2, R1, R2):
     se = (pooled_sd * (1/R1 + 1/R2))**0.5
 
     t_stat = (mean1 - mean2) / se
-    t_critical = 1.990  # 95% confidence interval with R=40 per group, df = 78
-                        # Modify if R is different
+    t_critical = 1.96   # 95% confidence interval
 
     print(f"\nTWO-SAMPLE T-TEST\nT-statistic: {t_stat:.4f}, T-critical: {t_critical}")
     if abs(t_stat) < t_critical:
@@ -540,9 +552,9 @@ def theoretical_mean(target_utilization, service_mean, service_sd):
     return theoretical_Wq, lambda_test
 
 
-def compare_strategies(sim_1, sim_2, sim_1_label, sim_2_label):
-    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1, sim_label=sim_1_label)
-    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2, sim_label=sim_2_label)
+def compare_strategies(sim_1, sim_2, sim_1_label, sim_2_label, save_sim_1=False, save_sim_2=False):
+    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1, sim_label=sim_1_label, save_data=save_sim_1, file=sim_1_label)
+    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2, sim_label=sim_2_label, save_data=save_sim_2, file=sim_2_label)
 
     two_sample_t_test(avg_Wq_1, avg_Wq_2, sd_Wq_1, sd_Wq_2, R1=40, R2=40)
     two_sample_bootstrap_test(rep_Wq_1, rep_Wq_2)
@@ -556,7 +568,7 @@ service_sd = 0.25
 print("Baseline utilization:")
 theoretical_Wq, lambda_test = theoretical_mean(target_utilization, service_mean, service_sd)
 sim2a = Simulator_Parameters(arrivals_lambda=lambda_test, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1, log_info=False)
-rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True)
+rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True, file="test")
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
 one_sample_bootstrap_test(rep_Wq, theoretical_Wq)
@@ -570,14 +582,16 @@ check_utilization(arrival_rate=arrival_rate, service_mean=1)
 sim_intervention_a = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
 print("Intervention A utilization:")
 check_utilization(arrival_rate=arrival_rate, service_mean=1, n_servers=2)
-compare_strategies(sim_baseline, sim_intervention_a, sim_1_label="baseline parameters", sim_2_label="intervention A")
+compare_strategies(sim_baseline, sim_intervention_a, sim_1_label="baseline parameters", sim_2_label="intervention A",
+                   save_sim_1=True, save_sim_2=True)
 
 
 print("\n~~~ Baseline vs Intervention B ~~~")
 sim_intervention_b = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
 print("Intervention B utilization:")
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
-compare_strategies(sim_baseline, sim_intervention_b, sim_1_label="baseline parameters", sim_2_label="intervention B")
+compare_strategies(sim_baseline, sim_intervention_b, sim_1_label="baseline parameters", sim_2_label="intervention B",
+                   save_sim_1=False, save_sim_2=True)
 
 
 ############## BONUS INTERVENTION: STABLE RHO ##############
@@ -594,10 +608,11 @@ sim_bonus.print_results()
 
 print("\n~~~ Bonus Intervention vs Baseline ~~~")
 sim_bonus.log_info = False
-compare_strategies(sim_bonus_params, sim_baseline, sim_1_label="baseline parameters", sim_2_label="bonus parameters")
+compare_strategies(sim_bonus_params, sim_baseline, sim_1_label="bonus parameters", sim_2_label="baseline parameters",
+                   save_sim_1=True, save_sim_2=False)
 
 print("\n########################################## DISCLAIMER ##########################################\n"+
-      "A random seed was set after recording the results video for submission.\n" +
-      "As such, the exact values shown in the output of this code may be different.\n"+
+      "A random seed was set after recording the discussion video for submission.\n" +
+      "As such, the values shown in the output of this code may be different from what's mentioned there.\n"+
       "The findings remain the same.\n"+
       "################################################################################################")
