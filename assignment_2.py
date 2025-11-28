@@ -330,8 +330,8 @@ def mg1_theoretical_Wq(target_utilization, service_mean, service_sd):
     return Wq, lambda_test
 
 
-def check_utilization(arrival_rate, service_mean):
-    rho = arrival_rate * service_mean
+def check_utilization(arrival_rate, service_mean, n_servers=1):
+    rho = (arrival_rate * service_mean)/n_servers
     if rho > 1: print(f"rho = {rho}, Chosen target utilization is not stable.")
     else: print(f"rho = {rho}, Chosen target utilization is stable.")
 
@@ -461,7 +461,7 @@ print("\n~~~ Baseline vs Intervention A ~~~")
 sim_baseline = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=1, log_info=False)
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
 sim_intervention_a = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
-check_utilization(arrival_rate=arrival_rate, service_mean=1)
+check_utilization(arrival_rate=arrival_rate, service_mean=1, n_servers=2)
 compare_strategies(sim_baseline, sim_intervention_a)
 
 
@@ -477,7 +477,7 @@ print("\n~~~ Bonus Intervention ~~~")
 ### Choose expected service time so that rho = 0.9
 service_mean = 0.9/arrival_rate
 print(f"Service expectation for utilization 0.9: {service_mean:.2f}")
-sim_bonus_params = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
+sim_bonus_params = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
 check_utilization(arrival_rate=arrival_rate, service_mean=service_mean)
 sim_bonus = AirportSimulator(sim_bonus_params)
 sim_bonus.start()
@@ -485,4 +485,4 @@ sim_bonus.print_results()
 
 print("\n~~~ Bonus Intervention vs Intervention A ~~~")
 sim_bonus.log_info = False
-compare_strategies(sim_bonus_params, sim_intervention_b)
+compare_strategies(sim_bonus_params, sim_baseline)
