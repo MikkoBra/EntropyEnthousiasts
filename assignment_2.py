@@ -189,6 +189,8 @@ class AirportSimulator:
         self.servers = simpy.Resource(self.env, capacity=self.n_servers)
         self.warmup_passengers = warmup_passengers
         self.last_passenger = 0
+        self.queue_snapshots = []
+        self.completed = False
 
     def count_queue(self):
         in_queue = 0
@@ -205,6 +207,7 @@ class AirportSimulator:
                 yield self.env.timeout(next_arrival)
             except simpy.Interrupt:
                 log.info(f"[{self.env.now:.1f}]: Steady state reached after {self.last_passenger} passengers. {self.count_queue()} passengers in queue.")
+                self.completed = True
                 break
             if i == self.warmup_passengers and self.warmup_passengers > 0:
                 log.info(f"[{self.env.now:.1f}]: Warmup period complete.")
@@ -217,6 +220,7 @@ class AirportSimulator:
             self.last_passenger = i
         if len(self.passengers) == self.n_passengers:
             log.info(f"[{self.env.now:.1f}]: All passengers have arrived. {self.count_queue()} still in queue.")
+            self.completed = True
         if self.halt_steady_state:
             if self.sim_halter.is_alive:
                 self.sim_halter.interrupt()
@@ -241,10 +245,24 @@ class AirportSimulator:
                 if self.sim_arrivals.is_alive:
                     self.sim_arrivals.interrupt()
                 break
-            
+
+    def queue_stats(self):
+        """
+        Every minue, get the number of passengers in the queue and store the resutls (for plotting).
+        """       
+        while True:
+            try:
+                yield self.env.timeout(1)
+            except simpy.Interrupt:
+                break
+            queue_size = self.count_queue()
+            self.queue_snapshots.append(queue_size)
+            if self.completed and queue_size == 0:
+                break
 
     def start(self):
         start_time = self.env.now
+        self.sim_stats = self.env.process(self.queue_stats())
         self.sim_arrivals = self.env.process(self.passenger_arrivals())
         if self.halt_steady_state:
             self.sim_halter = self.env.process(self.steady_halter())
@@ -308,10 +326,12 @@ def multiple_runs():
     ### Simulation Baseline
     R = 40
     rep_Wq = np.zeros(R)
+    sims = []
     for r in range(R):
         sim2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
         sim2a.start()
         rep_Wq[r] = np.mean(sim2a.total_times) # TODO: check if this is correct
+        sims.append(sim2a)
     data_folder = "a2_data"
     os.makedirs(data_folder, exist_ok=True)
     save_path = os.path.join(data_folder, "rep_Wq.npy")
@@ -325,7 +345,7 @@ def multiple_runs():
     theoretical_Wq = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
     print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes")
 
-    return rep_Wq, avg_Wq, theoretical_Wq, sd_Wq
+    return rep_Wq, avg_Wq, theoretical_Wq, sd_Wq, sims
 
 
 def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
@@ -366,7 +386,7 @@ def wilcoxon(rep_Wq, theoretical_Wq):
         print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
 
 
-rep_Wq, avg_Wq, theoretical_Wq, sd_Wq = multiple_runs()
+rep_Wq, avg_Wq, theoretical_Wq, sd_Wq, sims = multiple_runs()
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
 
@@ -396,5 +416,50 @@ sim_intervention_b.print_results()
 
 print("\n~~~ Bonus Intervention ~~~")
 sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=0.5, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
-sim_bonus.start()    
+sim_bonus.start()
 sim_bonus.print_results()
+
+### Plotting
+
+plt.figure(figsize=(10,10))
+plt.plot(sim_baseline.queue_snapshots, label="Baseline")
+plt.plot(sim_intervention_a.queue_snapshots, label="Intervention A")
+plt.plot(sim_intervention_b.queue_snapshots, label="Intervention B")
+plt.plot(sim_bonus.queue_snapshots, label="Bonus Intervention")
+plt.legend()
+plt.xlabel("Minutes")
+plt.ylabel("Number of Passengers in Queue")
+plt.title("Airport Queue Length Over Time")
+plt.savefig("airport_queue_length.png")
+
+plt.figure(figsize=(10,10))
+plt.plot(sim_baseline.queue_times, label="Baseline")
+plt.plot(sim_intervention_a.queue_times, label="Intervention A")
+plt.plot(sim_intervention_b.queue_times, label="Intervention B")
+plt.plot(sim_bonus.queue_times, label="Bonus Intervention")
+plt.legend()
+plt.xlabel("Passenger number")
+plt.ylabel("Queue Time")
+plt.title("Airport Queue Time Over Passengers")
+plt.savefig("airport_queue_time.png")
+
+plt.figure(figsize=(10,10))
+for i, sim in enumerate(sims):
+    plt.plot(sim.queue_times, 'b', alpha=0.5)
+plt.title("Stable Test Rate")
+plt.xlabel("Passenger number")
+plt.ylabel("Queue Time")
+plt.savefig("stable_test_rate.png")
+
+plt.figure(figsize=(10,5))
+plt.ylim(-1, 1)
+plt.yticks([])
+plt.plot(rep_Wq, np.zeros_like(rep_Wq), 'ko', label="Simulation Iteration")
+plt.axvline(theoretical_Wq, color='g', linestyle='--', label="Theoretical (M/G/1)")
+plt.axvline(avg_Wq, color='r', linestyle='--', label="Mean (M/G/1)")
+ci = sd_Wq/np.sqrt(40) * 1.96
+plt.fill_between([avg_Wq - ci, avg_Wq + ci], [-1, -1], [1, 1], alpha=0.1, color='b', label="95% Confidence Interval")
+plt.legend()
+plt.xlabel("Average waiting time in queue")
+plt.title("Distribution of Average Waiting Time in Queue")
+plt.savefig("average_waiting_time_in_queue.png")
