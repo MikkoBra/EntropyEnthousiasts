@@ -5,13 +5,24 @@ import logging
 import matplotlib.pyplot as plt
 import os
 from math import erf
+import random
 
+
+## Random seeds
+GLOBAL_SEED = 23
+np.random.seed(GLOBAL_SEED)
+GLOBAL_RNG = np.random.default_rng(GLOBAL_SEED)
+random.seed(GLOBAL_SEED) 
+
+## Logger
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 log = logging.getLogger('AirportSim')
 
-
+## Columns to extract from airport.csv
 COLUMNS = np.array(["Year", "Month", "Europe Passengers", "Intercontinental Passengers", "Total Passengers"])
 
+
+############## CSV EXTRACTION ##############
 
 def extract_columns(columns=COLUMNS, csv_path="airport.csv", delimiter=","):
     """
@@ -101,10 +112,10 @@ def filter_by_month(data, filter_month="September"):
     return filtered
     
 
-# Part 1
+######################## PART 1 ########################
+
 
 ## Calculate Arrival Rate (λ) in passengers per minute
-
 
 def per_minute_arrival_rate(data):
     """
@@ -131,14 +142,14 @@ data = filter_by_month(data)
 
 # lambda (rate per minute)
 arrival_rate = per_minute_arrival_rate(data)
-print("------------------- PART 1 -------------------")
+print("\n------------------- PART 1 -------------------\n")
 print(f"Arrival rate per minute calculated from airport.csv: {arrival_rate:.2f}")
 
 
-# Part 2
-print("\n------------------- PART 2 -------------------\n")
+######################## PART 2 ########################
 
-## Build a discrete-event simulator
+
+############## SIMULATOR ##############
 
 class Simulator_Parameters:
     """
@@ -175,6 +186,9 @@ class Passenger:
         self.log_info = log_info
     
     def run(self):
+        """
+        Defines the run behavior of the Passenger: enter queue, exit queue to be served, leave service.
+        """
         start_time = self.env.now
         if self.log_info:
             log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
@@ -198,7 +212,8 @@ class AirportSimulator:
 
     def __init__(self, params):
         """
-        Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
+        Initializes the simulator with the arrival rate (number of passengers per minue),
+        expected service time, and service time variance.
         """
         self.expected_service_time = params.expected_service_time
         self.service_time_sigma = params.service_time_sigma
@@ -215,6 +230,9 @@ class AirportSimulator:
         self.log_info = params.log_info
 
     def count_queue(self):
+        """
+        Counts number of passengers waiting in queue.
+        """
         in_queue = 0
         for p in self.passengers:
             if p.in_queue:
@@ -222,6 +240,10 @@ class AirportSimulator:
         return in_queue
 
     def passenger_arrivals(self):
+        """
+        Defines arrival behavior of passengers and service time per passenger,
+        before running the Passenger object. Includes termination logic.
+        """
         self.passengers = []
         for i in range(self.n_passengers):
             next_arrival = np.random.exponential(1/self.arrival_rate)
@@ -250,7 +272,7 @@ class AirportSimulator:
 
     def queue_stats(self):
         """
-        Every minue, get the number of passengers in the queue and store the resutls (for plotting).
+        Every minute, get the number of passengers in the queue and store the results (for plotting).
         """       
         while True:
             try:
@@ -264,7 +286,9 @@ class AirportSimulator:
 
     def steady_halter(self):
         """
-        Every 5 minutes, get the number of passengers in the queue. If that value is the same 5 times in a row and the warmup period is over, halt the simulation.
+        Simulation termination condition.
+        Every 5 minutes, get the number of passengers in the queue. If that value is the same 5 times
+        in a row and the warmup period is over, halt the simulation.
         """
         prev = np.zeros(5)
         i=0
@@ -285,6 +309,9 @@ class AirportSimulator:
             
 
     def start(self):
+        """
+        Startup logic of the simulation.
+        """
         start_time = self.env.now
         self.sim_arrivals = self.env.process(self.passenger_arrivals())
         if self.halt_steady_state:
@@ -308,6 +335,9 @@ class AirportSimulator:
         print(f"Average queue time: {np.mean(self.queue_times):.2f} minutes, sd: {np.std(self.queue_times):.2f} minutes")
         print(f"Average service time: {np.mean(self.server_times):.2f} minutes, sd: {np.std(self.server_times):.2f} minutes")
         print(f"Average total time: {np.mean(self.total_times):.2f} minutes, sd: {np.std(self.total_times):.2f} minutes")
+
+
+############## THEORETICAL CALCULATIONS ##############
 
 def mg1_theoretical_Wq(target_utilization, service_mean, service_sd):
     """
@@ -336,16 +366,7 @@ def check_utilization(arrival_rate, service_mean, n_servers=1):
     else: print(f"rho = {rho}, Chosen target utilization is stable.")
 
 
-## Run sample simulation
-
-sample_sim_params = Simulator_Parameters(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_servers=6)
-sample_sim = AirportSimulator(sample_sim_params)
-print("~~~ Sample Simulation ~~~")
-sample_sim.start()
-sample_sim.print_results()
-
-
-### Vaidate simulator
+############## VALIDATION ##############
 
 def multiple_runs(simulator_params, R=40, save_data=False):
     simulator = AirportSimulator(simulator_params)
@@ -362,7 +383,7 @@ def multiple_runs(simulator_params, R=40, save_data=False):
     if save_data:
         data_folder = "a2_data"
         os.makedirs(data_folder, exist_ok=True)
-        save_path = os.path.join(data_folder, "rep_Wq.npy")
+        save_path = os.path.join(data_folder, "mean_queue_times.npy")
         np.save(save_path, rep_Wq)
         print(f"Replication means saved to {save_path}")
 
@@ -371,13 +392,6 @@ def multiple_runs(simulator_params, R=40, save_data=False):
     print(f"Simulated average waiting time in queue (Wq): {avg_Wq:.4f} minutes, sd: {sd_Wq:.4f} minutes")
 
     return rep_Wq, avg_Wq, sd_Wq
-
-
-def theoretical_mean(target_utilization, service_mean, service_sd):
-    ### Theoretical Baseline
-    theoretical_Wq, lambda_test = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
-    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes, test lambda: {lambda_test:.2f}")
-    return theoretical_Wq, lambda_test
 
 
 def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
@@ -436,7 +450,88 @@ def wilcoxon(rep_Wq, theoretical_Wq):
         print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
 
 
-### Establish Stable Test Rate
+def one_sample_bootstrap_test(rep_Wq, theoretical_mean, N=10000):
+    """
+    One-sample bootstrap means test.
+    """
+    rng = GLOBAL_RNG
+    n = len(rep_Wq)
+    avg_Wq = np.mean(rep_Wq)
+    # Create the null distribution without assuming symmetry
+    shifted_data = rep_Wq - avg_Wq + theoretical_mean
+
+    bootstrap_means = np.empty(N)
+    for i in range(N):
+        resample = rng.choice(shifted_data, size=n, replace=True)
+        bootstrap_means[i] = np.mean(resample)
+    
+    p_val = np.mean(np.abs(bootstrap_means - theoretical_mean) >= np.abs(avg_Wq - theoretical_mean))
+
+    print(f"Bootstrap test p-value: {p_val:.4f}")
+    if p_val < 0.05:
+        print("Reject the null hypothesis: The simulation does not match the theoretical Wq.")
+    else:
+        print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
+    
+    data_folder = "a2_data"
+    os.makedirs(data_folder, exist_ok=True)
+    save_path = os.path.join(data_folder, "bootstrap.npy")
+    np.save(save_path, bootstrap_means)
+
+
+def two_sample_bootstrap_test(sim_1, sim_2, N=10000, savefile=""):
+    """
+    Two-sample bootstrap means test.
+    """
+    rng = GLOBAL_RNG
+    x = np.asarray(sim_1)
+    y = np.asarray(sim_2)
+
+    n1, n2 = len(x), len(y)
+    mean_x = np.mean(x)
+    mean_y = np.mean(y)
+    diff_obs = mean_x - mean_y
+    pooled_mean = (mean_x * n1 + mean_y * n2) / (n1 + n2)
+
+    x_shifted = x - mean_x + pooled_mean
+    y_shifted = y - mean_y + pooled_mean
+
+    boot_diffs = np.empty(N)
+    for i in range(N):
+        xb = rng.choice(x_shifted, size=n1, replace=True)
+        yb = rng.choice(y_shifted, size=n2, replace=True)
+        boot_diffs[i] = np.mean(xb) - np.mean(yb)
+
+    p_val = np.mean(np.abs(boot_diffs) >= np.abs(diff_obs))
+    print(f"Bootstrap test p-value: {p_val:.4f}")
+    if p_val > 0.05:
+        print("Fail to reject the null hypothesis: The two samples have no significant difference.")
+    else:
+        print("Reject the null hypothesis: The two samples differ significantly.")
+    
+    data_folder = "a2_data"
+    os.makedirs(data_folder, exist_ok=True)
+    save_path = os.path.join(data_folder, "two_sample_bootstrap.npy")
+    np.save(save_path, boot_diffs)
+
+
+############## OUTPUT ##############
+
+def theoretical_mean(target_utilization, service_mean, service_sd):
+    theoretical_Wq, lambda_test = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
+    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes, test lambda: {lambda_test:.2f}")
+    return theoretical_Wq, lambda_test
+
+
+def compare_strategies(sim_1, sim_2):
+    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1)
+    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2)
+
+    two_sample_t_test(avg_Wq_1, avg_Wq_2, sd_Wq_1, sd_Wq_2, R1=40, R2=40)
+    two_sample_bootstrap_test(rep_Wq_1, rep_Wq_2)
+
+
+print("\n------------------- PART 2 -------------------\n")
 print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
 target_utilization = 0.85
 service_mean = 1
@@ -446,15 +541,7 @@ sim2a = Simulator_Parameters(arrivals_lambda=lambda_test, expected_service_time=
 rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True)
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
-
-
-## Evaluating Intervations
-
-def compare_strategies(sim_1, sim_2):
-    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1)
-    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2)
-
-    two_sample_t_test(avg_Wq_1, avg_Wq_2, sd_Wq_1, sd_Wq_2, R1=40, R2=40)
+one_sample_bootstrap_test(rep_Wq, theoretical_Wq)
 
 
 print("\n~~~ Baseline vs Intervention A ~~~")
@@ -471,7 +558,7 @@ check_utilization(arrival_rate=arrival_rate, service_mean=1)
 compare_strategies(sim_baseline, sim_intervention_b)
 
 
-### Bonus Intervention
+############## BONUS INTERVENTION: STABLE RHO ##############
 
 print("\n~~~ Bonus Intervention ~~~")
 ### Choose expected service time so that rho = 0.9
