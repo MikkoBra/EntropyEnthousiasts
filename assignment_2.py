@@ -245,6 +245,20 @@ class AirportSimulator:
             if self.sim_halter.is_alive:
                 self.sim_halter.interrupt()
 
+    def queue_stats(self):
+        """
+        Every minue, get the number of passengers in the queue and store the resutls (for plotting).
+        """       
+        while True:
+            try:
+                yield self.env.timeout(1)
+            except simpy.Interrupt:
+                break
+            queue_size = self.count_queue()
+            self.queue_snapshots.append(queue_size)
+            if self.completed and queue_size == 0:
+                break
+
     def steady_halter(self):
         """
         Every 5 minutes, get the number of passengers in the queue. If that value is the same 5 times in a row and the warmup period is over, halt the simulation.
@@ -272,6 +286,7 @@ class AirportSimulator:
         self.sim_arrivals = self.env.process(self.passenger_arrivals())
         if self.halt_steady_state:
             self.sim_halter = self.env.process(self.steady_halter())
+        self.sim_stats = self.env.process(self.queue_stats())
         self.env.run()
         if self.log_info:
             log.info(f"[{self.env.now:.1f}]: Simulation complete.")
