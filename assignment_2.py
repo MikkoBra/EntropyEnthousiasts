@@ -140,6 +140,23 @@ print("\n------------------- PART 2 -------------------\n")
 
 ## Build a discrete-event simulator
 
+class Simulator_Parameters:
+    """
+    Class to store parameters for the simulator.
+    """
+    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_servers=1, halt_steady_state=False, warmup_passengers=1000, log_info=True):
+        """
+        Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
+        """
+        self.arrivals_lambda = arrivals_lambda
+        self.expected_service_time = expected_service_time
+        self.service_time_sigma = service_time_sigma
+        self.n_passengers = n_passengers
+        self.n_servers = n_servers
+        self.halt_steady_state = halt_steady_state
+        self.warmup_passengers = warmup_passengers
+        self.log_info = log_info
+
 class Passenger:
     """
     Passenger class for airport arrivals.
@@ -179,21 +196,23 @@ class AirportSimulator:
     Simulator class for airport arrivals.
     """
 
-    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_servers=1, halt_steady_state=False, warmup_passengers=1000, log_info=True):
+    def __init__(self, params):
         """
         Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
         """
-        self.expected_service_time = expected_service_time
-        self.service_time_sigma = service_time_sigma
-        self.arrival_rate = arrivals_lambda
-        self.n_passengers = n_passengers
-        self.n_servers = n_servers
-        self.halt_steady_state = halt_steady_state
+        self.expected_service_time = params.expected_service_time
+        self.service_time_sigma = params.service_time_sigma
+        self.arrival_rate = params.arrivals_lambda
+        self.n_passengers = params.n_passengers
+        self.n_servers = params.n_servers
+        self.halt_steady_state = params.halt_steady_state
         self.env = simpy.Environment()
         self.servers = simpy.Resource(self.env, capacity=self.n_servers)
-        self.warmup_passengers = warmup_passengers
+        self.warmup_passengers = params.warmup_passengers
         self.last_passenger = 0
-        self.log_info = log_info
+        self.queue_snapshots = []
+        self.completed = False
+        self.log_info = params.log_info
 
     def count_queue(self):
         in_queue = 0
@@ -249,9 +268,6 @@ class AirportSimulator:
             
 
     def start(self):
-        self.env = simpy.Environment()
-        self.servers = simpy.Resource(self.env, capacity=self.n_servers)
-        
         start_time = self.env.now
         self.sim_arrivals = self.env.process(self.passenger_arrivals())
         if self.halt_steady_state:
@@ -304,7 +320,8 @@ def check_utilization(arrival_rate, service_mean):
 
 ## Run sample simulation
 
-sample_sim = AirportSimulator(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_servers=6)
+sample_sim_params = Simulator_Parameters(arrivals_lambda=3, expected_service_time=2, service_time_sigma=1, n_passengers=1000, warmup_passengers=100, halt_steady_state=True, n_servers=6)
+sample_sim = AirportSimulator(sample_sim_params)
 print("~~~ Sample Simulation ~~~")
 sample_sim.start()
 sample_sim.print_results()
@@ -312,8 +329,8 @@ sample_sim.print_results()
 
 ### Vaidate simulator
 
-def multiple_runs(simulator, R=40, save_data=False):
-
+def multiple_runs(simulator_params, R=40, save_data=False):
+    simulator = AirportSimulator(simulator_params)
     ### Simulation Baseline
     rep_Wq = []
     print(f"Running {R} simulations...")
@@ -407,7 +424,7 @@ target_utilization = 0.85
 service_mean = 1
 service_sd = 0.25
 theoretical_Wq, lambda_test = theoretical_mean(target_utilization, service_mean, service_sd)
-sim2a = AirportSimulator(arrivals_lambda=lambda_test, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1, log_info=False)
+sim2a = Simulator_Parameters(arrivals_lambda=lambda_test, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1, log_info=False)
 rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True)
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
@@ -423,15 +440,15 @@ def compare_strategies(sim_1, sim_2):
 
 
 print("\n~~~ Baseline vs Intervention A ~~~")
-sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=1, log_info=False)
+sim_baseline = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=1, log_info=False)
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
-sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
+sim_intervention_a = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
 compare_strategies(sim_baseline, sim_intervention_a)
 
 
 print("\n~~~ Baseline vs Intervention B ~~~")
-sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
+sim_intervention_b = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
 compare_strategies(sim_baseline, sim_intervention_b)
 
@@ -442,11 +459,12 @@ print("\n~~~ Bonus Intervention ~~~")
 ### Choose expected service time so that rho = 0.9
 service_mean = 0.9/arrival_rate
 print(f"Service expectation for utilization 0.9: {service_mean:.2f}")
-sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
+sim_bonus_params = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
 check_utilization(arrival_rate=arrival_rate, service_mean=service_mean)
-sim_bonus.start()    
+sim_bonus = AirportSimulator(sim_bonus_params)
+sim_bonus.start()
 sim_bonus.print_results()
 
 print("\n~~~ Bonus Intervention vs Intervention A ~~~")
 sim_bonus.log_info = False
-compare_strategies(sim_bonus, sim_intervention_b)
+compare_strategies(sim_bonus_params, sim_intervention_b)
