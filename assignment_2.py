@@ -145,7 +145,7 @@ class Passenger:
     Passenger class for airport arrivals.
     """
 
-    def __init__(self, env, passenger_id, server_time, servers):
+    def __init__(self, env, passenger_id, server_time, servers, log_info=True):
         """
         Initializes the passenger with a unique ID.
         """
@@ -155,18 +155,22 @@ class Passenger:
         self.env = env
         self.in_queue = False
         self.completed = False
+        self.log_info = log_info
     
     def run(self):
         start_time = self.env.now
-        log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
+        if self.log_info:
+            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} arrives at airport and enteres queue")
         self.in_queue = True
         with self.servers.request() as req:
             yield req
-            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters server")
+            if self.log_info:
+                log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} exits queue and enters server")
             self.in_queue = False
             self.queue_time = self.env.now - start_time
             yield self.env.timeout(self.server_time)
-            log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} leaves security")
+            if self.log_info:
+                log.debug(f"[{self.env.now:.1f}]: Passenger {self.passenger_id} leaves security")
             self.total_time = self.env.now - start_time
             self.completed = True
 
@@ -175,13 +179,13 @@ class AirportSimulator:
     Simulator class for airport arrivals.
     """
 
-    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_servers=1, halt_steady_state=False, warmup_passengers=1000):
+    def __init__(self, arrivals_lambda, expected_service_time, service_time_sigma, n_passengers, n_servers=1, halt_steady_state=False, warmup_passengers=1000, log_info=True):
         """
         Initializes the simulator with the arrival rate (number of passengers per minue), expected service time, and service time variance.
         """
         self.expected_service_time = expected_service_time
         self.service_time_sigma = service_time_sigma
-        self.arrival_rate = 1/arrivals_lambda # rate = 1 / arrivals per minute
+        self.arrival_rate = arrivals_lambda
         self.n_passengers = n_passengers
         self.n_servers = n_servers
         self.halt_steady_state = halt_steady_state
@@ -189,6 +193,7 @@ class AirportSimulator:
         self.servers = simpy.Resource(self.env, capacity=self.n_servers)
         self.warmup_passengers = warmup_passengers
         self.last_passenger = 0
+        self.log_info = log_info
 
     def count_queue(self):
         in_queue = 0
@@ -200,22 +205,22 @@ class AirportSimulator:
     def passenger_arrivals(self):
         self.passengers = []
         for i in range(self.n_passengers):
-            next_arrival = np.random.exponential(self.arrival_rate)
+            next_arrival = np.random.exponential(1/self.arrival_rate)
             try:
                 yield self.env.timeout(next_arrival)
             except simpy.Interrupt:
                 log.info(f"[{self.env.now:.1f}]: Steady state reached after {self.last_passenger} passengers. {self.count_queue()} passengers in queue.")
                 break
-            if i == self.warmup_passengers and self.warmup_passengers > 0:
+            if i == self.warmup_passengers and self.warmup_passengers > 0 and self.log_info:
                 log.info(f"[{self.env.now:.1f}]: Warmup period complete.")
             service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
             while service_time < 0:
                 service_time = np.random.normal(self.expected_service_time, self.service_time_sigma)
-            passenger = Passenger(self.env, i+1, service_time, self.servers)
+            passenger = Passenger(self.env, i+1, service_time, self.servers, log_info=self.log_info)
             self.env.process(passenger.run())
             self.passengers.append(passenger)
             self.last_passenger = i
-        if len(self.passengers) == self.n_passengers:
+        if len(self.passengers) == self.n_passengers and self.log_info:
             log.info(f"[{self.env.now:.1f}]: All passengers have arrived. {self.count_queue()} still in queue.")
         if self.halt_steady_state:
             if self.sim_halter.is_alive:
@@ -244,22 +249,25 @@ class AirportSimulator:
             
 
     def start(self):
+        self.env = simpy.Environment()
+        self.servers = simpy.Resource(self.env, capacity=self.n_servers)
+        
         start_time = self.env.now
         self.sim_arrivals = self.env.process(self.passenger_arrivals())
         if self.halt_steady_state:
             self.sim_halter = self.env.process(self.steady_halter())
         self.env.run()
-        log.info(f"[{self.env.now:.1f}]: Simulation complete.")
+        if self.log_info:
+            log.info(f"[{self.env.now:.1f}]: Simulation complete.")
         self.total_time = self.env.now - start_time
         self.n_passengers = self.last_passenger + 1
-        log.info(f"[{self.env.now:.1f}]: Simulated {self.n_passengers} passengers.")
-        self.queue_times = np.zeros(self.n_passengers - self.warmup_passengers)
-        self.server_times = np.zeros(self.n_passengers - self.warmup_passengers)
-        self.total_times = np.zeros(self.n_passengers - self.warmup_passengers)
-        for i, j in enumerate(range(self.warmup_passengers, self.n_passengers)):
-            self.queue_times[i] = self.passengers[j].queue_time
-            self.server_times[i] = self.passengers[j].server_time
-            self.total_times[i] = self.passengers[j].total_time
+        if self.log_info:
+            log.info(f"[{self.env.now:.1f}]: Simulated {self.n_passengers} passengers.")
+        completed_passengers = [p for p in self.passengers[self.warmup_passengers:] if p.completed]
+        self.n_completed = len(completed_passengers)
+        self.queue_times = np.array([p.queue_time for p in completed_passengers])
+        self.server_times = np.array([p.server_time for p in completed_passengers])
+        self.total_times = np.array([p.total_time for p in completed_passengers])
 
     def print_results(self):
         print(f"Total time: {self.total_time:.1f} minutes")
@@ -283,9 +291,15 @@ def mg1_theoretical_Wq(target_utilization, service_mean, service_sd):
     """
     ES2 = service_sd**2 + service_mean**2
     lambda_test = target_utilization / service_mean
-    assert lambda_test * service_mean < 1, "Chosen target utilization not stable."
+    check_utilization(lambda_test, service_mean)
     Wq = (lambda_test * ES2) / (2 * (1 - target_utilization))
-    return Wq
+    return Wq, lambda_test
+
+
+def check_utilization(arrival_rate, service_mean):
+    rho = arrival_rate * service_mean
+    if rho > 1: print(f"rho = {rho}, Chosen target utilization is not stable.")
+    else: print(f"rho = {rho}, Chosen target utilization is stable.")
 
 
 ## Run sample simulation
@@ -298,34 +312,37 @@ sample_sim.print_results()
 
 ### Vaidate simulator
 
-def multiple_runs():
-    ### Establish Stable Test Rate
-    print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
-    target_utilization = 0.85
-    service_mean = 1
-    service_sd = 0.25
+def multiple_runs(simulator, R=40, save_data=False):
 
     ### Simulation Baseline
-    R = 40
-    rep_Wq = np.zeros(R)
-    for r in range(R):
-        sim2a = AirportSimulator(arrivals_lambda=0.85, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1)
-        sim2a.start()
-        rep_Wq[r] = np.mean(sim2a.total_times) # TODO: check if this is correct
-    data_folder = "a2_data"
-    os.makedirs(data_folder, exist_ok=True)
-    save_path = os.path.join(data_folder, "rep_Wq.npy")
-    np.save(save_path, rep_Wq)
-    print(f"Replication means saved to {save_path}")
+    rep_Wq = []
+    print(f"Running {R} simulations...")
+    while len(rep_Wq) < R:
+        simulator.start()
+        if len(simulator.queue_times) > 0:
+            rep_Wq.append(np.mean(simulator.queue_times))
+        else:
+            print(f"Warning: Replication attempt has no completed passengers. Retrying...")
+    rep_Wq = np.array(rep_Wq)
+    if save_data:
+        data_folder = "a2_data"
+        os.makedirs(data_folder, exist_ok=True)
+        save_path = os.path.join(data_folder, "rep_Wq.npy")
+        np.save(save_path, rep_Wq)
+        print(f"Replication means saved to {save_path}")
 
     avg_Wq = np.mean(rep_Wq)
     sd_Wq = np.std(rep_Wq, ddof=1)
     print(f"Simulated average waiting time in queue (Wq): {avg_Wq:.4f} minutes, sd: {sd_Wq:.4f} minutes")
-    ### Theoretical Baseline
-    theoretical_Wq = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
-    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes")
 
-    return rep_Wq, avg_Wq, theoretical_Wq, sd_Wq
+    return rep_Wq, avg_Wq, sd_Wq
+
+
+def theoretical_mean(target_utilization, service_mean, service_sd):
+    ### Theoretical Baseline
+    theoretical_Wq, lambda_test = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
+    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes, test lambda: {lambda_test:.2f}")
+    return theoretical_Wq, lambda_test
 
 
 def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
@@ -338,6 +355,24 @@ def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
         print("Fail to reject the null hypothesis: The simulation matches the theoretical model.")
     else:
         print("Reject the null hypothesis: The simulation does not match the theoretical model.")
+
+
+def two_sample_t_test(mean1, mean2, sd1, sd2, R1, R2):
+    pooled_variance = (
+        ((R1 - 1) * sd1**2) + ((R2 - 1) * sd2**2)
+    ) / (R1 + R2 - 2)
+    pooled_sd = np.sqrt(pooled_variance)
+    se = (pooled_sd * (1/R1 + 1/R2))**0.5
+
+    t_stat = (mean1 - mean2) / se
+    t_critical = 1.990  # 95% confidence interval with R=40 per group, df = 78
+                        # Modify if R is different
+
+    print(f"T-statistic: {t_stat:.4f}, T-critical: {t_critical}")
+    if abs(t_stat) < t_critical:
+        print("Fail to reject the null hypothesis: The two samples have no significant difference.")
+    else:
+        print("Reject the null hypothesis: The two samples differ significantly.")
 
 
 def wilcoxon(rep_Wq, theoretical_Wq):
@@ -366,35 +401,52 @@ def wilcoxon(rep_Wq, theoretical_Wq):
         print("Fail to reject the null hypothesis: The simulation matches the theoretical Wq.")
 
 
-rep_Wq, avg_Wq, theoretical_Wq, sd_Wq = multiple_runs()
+### Establish Stable Test Rate
+print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
+target_utilization = 0.85
+service_mean = 1
+service_sd = 0.25
+theoretical_Wq, lambda_test = theoretical_mean(target_utilization, service_mean, service_sd)
+sim2a = AirportSimulator(arrivals_lambda=lambda_test, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1, log_info=False)
+rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True)
 one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R=40)
 wilcoxon(rep_Wq, theoretical_Wq)
 
 
 ## Evaluating Intervations
 
-print("\n~~~ Baseline ~~~")
-sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=1)
-sim_baseline.start()
-sim_baseline.print_results()
+def compare_strategies(sim_1, sim_2):
+    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1)
+    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2)
 
-### Intervention A
+    two_sample_t_test(avg_Wq_1, avg_Wq_2, sd_Wq_1, sd_Wq_2, R1=40, R2=40)
 
-print("\n~~~ Intervention A ~~~")
-sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
-sim_intervention_a.start()    
-sim_intervention_a.print_results()
 
-### Intervention B
+print("\n~~~ Baseline vs Intervention A ~~~")
+sim_baseline = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=1, log_info=False)
+check_utilization(arrival_rate=arrival_rate, service_mean=1)
+sim_intervention_a = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
+check_utilization(arrival_rate=arrival_rate, service_mean=1)
+compare_strategies(sim_baseline, sim_intervention_a)
 
-print("\n~~~ Intervention B ~~~")
-sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
-sim_intervention_b.start()    
-sim_intervention_b.print_results()
+
+print("\n~~~ Baseline vs Intervention B ~~~")
+sim_intervention_b = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
+check_utilization(arrival_rate=arrival_rate, service_mean=1)
+compare_strategies(sim_baseline, sim_intervention_b)
+
 
 ### Bonus Intervention
 
 print("\n~~~ Bonus Intervention ~~~")
-sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=0.5, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=0, n_servers=2)
+### Choose expected service time so that rho = 0.9
+service_mean = 0.9/arrival_rate
+print(f"Service expectation for utilization 0.9: {service_mean:.2f}")
+sim_bonus = AirportSimulator(arrivals_lambda=arrival_rate, expected_service_time=service_mean, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1)
+check_utilization(arrival_rate=arrival_rate, service_mean=service_mean)
 sim_bonus.start()    
 sim_bonus.print_results()
+
+print("\n~~~ Bonus Intervention vs Intervention A ~~~")
+sim_bonus.log_info = False
+compare_strategies(sim_bonus, sim_intervention_b)
