@@ -228,6 +228,7 @@ class AirportSimulator:
             try:
                 yield self.env.timeout(next_arrival)
             except simpy.Interrupt:
+                self.completed = True
                 log.info(f"[{self.env.now:.1f}]: Steady state reached after {self.last_passenger} passengers. {self.count_queue()} passengers in queue.")
                 break
             if i == self.warmup_passengers and self.warmup_passengers > 0 and self.log_info:
@@ -239,8 +240,10 @@ class AirportSimulator:
             self.env.process(passenger.run())
             self.passengers.append(passenger)
             self.last_passenger = i
-        if len(self.passengers) == self.n_passengers and self.log_info:
-            log.info(f"[{self.env.now:.1f}]: All passengers have arrived. {self.count_queue()} still in queue.")
+        if len(self.passengers) == self.n_passengers:
+            self.completed = True
+            if self.log_info:
+                log.info(f"[{self.env.now:.1f}]: All passengers have arrived. {self.count_queue()} still in queue.")
         if self.halt_steady_state:
             if self.sim_halter.is_alive:
                 self.sim_halter.interrupt()
