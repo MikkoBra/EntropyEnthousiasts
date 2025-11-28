@@ -368,11 +368,15 @@ def check_utilization(arrival_rate, service_mean, n_servers=1):
 
 ############## VALIDATION ##############
 
-def multiple_runs(simulator_params, R=40, save_data=False):
+def multiple_runs(simulator_params, R=40, save_data=False, sim_label="chosen parameters"):
+    """
+    Code for running multiple simulations with the same parameters
+    and returning statistics from those simulations.
+    """
     simulator = AirportSimulator(simulator_params)
     ### Simulation Baseline
     rep_Wq = []
-    print(f"Running {R} simulations...")
+    print(f"Running {R} simulations for {sim_label}...")
     while len(rep_Wq) < R:
         simulator.start()
         if len(simulator.queue_times) > 0:
@@ -395,11 +399,15 @@ def multiple_runs(simulator_params, R=40, save_data=False):
 
 
 def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
-    ### Hypothesis Test
+    """
+    One-sample t-test implementation. Data assumptions:
+    - Independent
+    - Normally distributed
+    """
     t_stat = (avg_Wq - theoretical_Wq) / (sd_Wq / np.sqrt(R))
     t_critical = 2.0227  # 95% confidence interval with R=40, df=39
 
-    print(f"T-statistic: {t_stat:.4f}, T-critical: {t_critical}")
+    print(f"\nONE-SAMPLE T-TEST\nT-statistic: {t_stat:.4f}, T-critical: {t_critical}")
     if abs(t_stat) < t_critical:
         print("Fail to reject the null hypothesis: The simulation matches the theoretical model.")
     else:
@@ -407,6 +415,11 @@ def one_sample_t_test(avg_Wq, theoretical_Wq, sd_Wq, R):
 
 
 def two_sample_t_test(mean1, mean2, sd1, sd2, R1, R2):
+    """
+    Two-sample t-test implementation. Data assumptions:
+    - Independent
+    - Normally distributed
+    """
     pooled_variance = (
         ((R1 - 1) * sd1**2) + ((R2 - 1) * sd2**2)
     ) / (R1 + R2 - 2)
@@ -417,7 +430,7 @@ def two_sample_t_test(mean1, mean2, sd1, sd2, R1, R2):
     t_critical = 1.990  # 95% confidence interval with R=40 per group, df = 78
                         # Modify if R is different
 
-    print(f"T-statistic: {t_stat:.4f}, T-critical: {t_critical}")
+    print(f"\nTWO-SAMPLE T-TEST\nT-statistic: {t_stat:.4f}, T-critical: {t_critical}")
     if abs(t_stat) < t_critical:
         print("Fail to reject the null hypothesis: The two samples have no significant difference.")
     else:
@@ -425,6 +438,10 @@ def two_sample_t_test(mean1, mean2, sd1, sd2, R1, R2):
 
 
 def wilcoxon(rep_Wq, theoretical_Wq):
+    """
+    Wilcoxon signed-rank test implementation. Data assumptions:
+    - Symmetricaly distributed around the median
+    """
     diffs = rep_Wq - theoretical_Wq
     diffs = diffs[diffs != 0]
     abs_diffs = np.abs(diffs)
@@ -434,7 +451,7 @@ def wilcoxon(rep_Wq, theoretical_Wq):
     W_neg = np.sum(ranks[diffs < 0])
     W = min(W_pos, W_neg)
 
-    print(f"Wilcoxon signed-rank test statistic W: {W}")
+    print(f"\nWILCOXON SIGNED-RANK TEST\nTest statistic W: {W}")
 
     n = len(diffs)
     # null hypothesis: positive and negative diffs are equally likely
@@ -467,7 +484,7 @@ def one_sample_bootstrap_test(rep_Wq, theoretical_mean, N=10000):
     
     p_val = np.mean(np.abs(bootstrap_means - theoretical_mean) >= np.abs(avg_Wq - theoretical_mean))
 
-    print(f"Bootstrap test p-value: {p_val:.4f}")
+    print(f"\nONE-SAMPLE BOOTSTRAP TEST\nBootstrap test p-value: {p_val:.4f}")
     if p_val < 0.05:
         print("Reject the null hypothesis: The simulation does not match the theoretical Wq.")
     else:
@@ -479,7 +496,7 @@ def one_sample_bootstrap_test(rep_Wq, theoretical_mean, N=10000):
     np.save(save_path, bootstrap_means)
 
 
-def two_sample_bootstrap_test(sim_1, sim_2, N=10000, savefile=""):
+def two_sample_bootstrap_test(sim_1, sim_2, N=10000):
     """
     Two-sample bootstrap means test.
     """
@@ -503,7 +520,7 @@ def two_sample_bootstrap_test(sim_1, sim_2, N=10000, savefile=""):
         boot_diffs[i] = np.mean(xb) - np.mean(yb)
 
     p_val = np.mean(np.abs(boot_diffs) >= np.abs(diff_obs))
-    print(f"Bootstrap test p-value: {p_val:.4f}")
+    print(f"\nTWO-SAMPLE BOOTSTRAP TEST\nBootstrap test p-value: {p_val:.4f}")
     if p_val > 0.05:
         print("Fail to reject the null hypothesis: The two samples have no significant difference.")
     else:
@@ -519,23 +536,24 @@ def two_sample_bootstrap_test(sim_1, sim_2, N=10000, savefile=""):
 
 def theoretical_mean(target_utilization, service_mean, service_sd):
     theoretical_Wq, lambda_test = mg1_theoretical_Wq(target_utilization, service_mean, service_sd)
-    print(f"Theoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes, test lambda: {lambda_test:.2f}")
+    print(f"\nTheoretical average waiting time in queue (Wq): {theoretical_Wq:.4f} minutes, test lambda: {lambda_test:.2f}\n")
     return theoretical_Wq, lambda_test
 
 
-def compare_strategies(sim_1, sim_2):
-    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1)
-    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2)
+def compare_strategies(sim_1, sim_2, sim_1_label, sim_2_label):
+    rep_Wq_1, avg_Wq_1, sd_Wq_1 = multiple_runs(sim_1, sim_label=sim_1_label)
+    rep_Wq_2, avg_Wq_2, sd_Wq_2 = multiple_runs(sim_2, sim_label=sim_2_label)
 
     two_sample_t_test(avg_Wq_1, avg_Wq_2, sd_Wq_1, sd_Wq_2, R1=40, R2=40)
     two_sample_bootstrap_test(rep_Wq_1, rep_Wq_2)
 
 
 print("\n------------------- PART 2 -------------------\n")
-print("\n~~~ Part 2a: Establish Stable Test Rate ~~~")
+print("~~~~~~ Part 2A: Validating Our Simulator ~~~~~~\n")
 target_utilization = 0.85
 service_mean = 1
 service_sd = 0.25
+print("Baseline utilization:")
 theoretical_Wq, lambda_test = theoretical_mean(target_utilization, service_mean, service_sd)
 sim2a = Simulator_Parameters(arrivals_lambda=lambda_test, expected_service_time=1, service_time_sigma=0.25, n_passengers=100000, warmup_passengers=1000, halt_steady_state=True, n_servers=1, log_info=False)
 rep_Wq, avg_Wq, sd_Wq = multiple_runs(sim2a, save_data=True)
@@ -544,18 +562,22 @@ wilcoxon(rep_Wq, theoretical_Wq)
 one_sample_bootstrap_test(rep_Wq, theoretical_Wq)
 
 
-print("\n~~~ Baseline vs Intervention A ~~~")
+print("\n~~~~~~ Part 2B: Evaluating Interventions ~~~~~~\n")
+print("~~~ Baseline vs Intervention A ~~~")
 sim_baseline = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=1, log_info=False)
+print("Baseline utilization:")
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
 sim_intervention_a = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.25, n_passengers=3000, warmup_passengers=1000, n_servers=2, log_info=False)
+print("Intervention A utilization:")
 check_utilization(arrival_rate=arrival_rate, service_mean=1, n_servers=2)
-compare_strategies(sim_baseline, sim_intervention_a)
+compare_strategies(sim_baseline, sim_intervention_a, sim_1_label="baseline parameters", sim_2_label="intervention A")
 
 
 print("\n~~~ Baseline vs Intervention B ~~~")
 sim_intervention_b = Simulator_Parameters(arrivals_lambda=arrival_rate, expected_service_time=1, service_time_sigma=0.1, n_passengers=3000, warmup_passengers=0, n_servers=1, log_info=False)
+print("Intervention B utilization:")
 check_utilization(arrival_rate=arrival_rate, service_mean=1)
-compare_strategies(sim_baseline, sim_intervention_b)
+compare_strategies(sim_baseline, sim_intervention_b, sim_1_label="baseline parameters", sim_2_label="intervention B")
 
 
 ############## BONUS INTERVENTION: STABLE RHO ##############
@@ -570,6 +592,12 @@ sim_bonus = AirportSimulator(sim_bonus_params)
 sim_bonus.start()
 sim_bonus.print_results()
 
-print("\n~~~ Bonus Intervention vs Intervention A ~~~")
+print("\n~~~ Bonus Intervention vs Baseline ~~~")
 sim_bonus.log_info = False
-compare_strategies(sim_bonus_params, sim_baseline)
+compare_strategies(sim_bonus_params, sim_baseline, sim_1_label="baseline parameters", sim_2_label="bonus parameters")
+
+print("\n########################################## DISCLAIMER ##########################################\n"+
+      "A random seed was set after recording the results video for submission.\n" +
+      "As such, the exact values shown in the output of this code may be different.\n"+
+      "The findings remain the same.\n"+
+      "################################################################################################")
